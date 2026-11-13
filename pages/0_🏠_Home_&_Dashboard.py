@@ -276,19 +276,33 @@ def generate_excel_sla_tahunan(raw_df_ks, raw_df_tk, tahun_target):
     wb.remove(wb.active)
 
     alias_cabang = {
-        "BANGKA BELITUNG": "BABEL", "BABEL": "BABEL",
-        "BANTEN": "BANTEN",
-        "DKI JAKARTA": "DKI", "DKI": "DKI",
-        "ICON": "ICON",
-        "JAWA BARAT": "JABAR", "JABAR": "JABAR", "BANDUNG": "JABAR",
-        "JAWA TIMUR": "JAWA TIMUR", "JATIM": "JAWA TIMUR",
-        "JAWA TENGAH": "DIY", "DIY": "DIY","JATENG": "DIY",
-        "MEDAN": "MEDAN",
-        "PADANG": "PADANG","SUMBAR": "PADANG",
-        "PALEMBANG": "PALEMBANG",
-        "PEKANBARU": "PEKANBARU",
-        "SIBOLGA NIAS": "SIBOLGA", "SIBOLGA": "SIBOLGA"
-    }
+    # BABEL
+    "BANGKA BELITUNG": "BABEL", "BABEL": "BABEL",
+    # BANTEN
+    "BANTEN": "BANTEN",
+    # DKI (termasuk DKI2 & PLN Pusat)
+    "DKI JAKARTA": "DKI", "DKI": "DKI", "DKI2": "DKI",
+    "PLNPUSAT": "DKI", "PLN PUSAT": "DKI",
+    # ICON
+    "ICON": "ICON",
+    # JABAR (termasuk BANDUNG & BANDUNG JABAR)
+    "JAWA BARAT": "JABAR", "JABAR": "JABAR",
+    "BANDUNG": "JABAR", "BANDUNG JABAR": "JABAR",
+    # JAWA TIMUR (termasuk JATIM & JBTT)
+    "JAWA TIMUR": "JAWA TIMUR", "JATIM": "JAWA TIMUR", "JBTT": "JAWA TIMUR",
+    # DIY / JATENG
+    "JAWA TENGAH": "DIY", "JATENG": "DIY", "DIY": "DIY",
+    # MEDAN
+    "MEDAN": "MEDAN",
+    # PADANG (termasuk SUMBAR)
+    "PADANG": "PADANG", "SUMBAR": "PADANG",
+    # PALEMBANG
+    "PALEMBANG": "PALEMBANG",
+    # PEKANBARU
+    "PEKANBARU": "PEKANBARU",
+    # SIBOLGA
+    "SIBOLGA NIAS": "SIBOLGA", "SIBOLGA": "SIBOLGA"
+}
     daftar_cabang = [
         "BABEL", "BANTEN", "DKI", "ICON", "JABAR", "JAWA TIMUR",
         "DIY", "MEDAN", "PADANG", "PALEMBANG", "PEKANBARU", "SIBOLGA"
