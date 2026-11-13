@@ -126,8 +126,8 @@ st.markdown(f"""
 
     /* 2. GARIS PUTIH TEBAL DI BAWAH MENU PALING BAWAH (UPDATE DATABASE SPK) */
     [data-testid="stSidebarNav"] {{
-        border-bottom: 3px solid #FFFFFF !important;
-        margin: 0 16px 16px 16px !important;
+        border-bottom: 2px solid #FFFFFF !important;
+        margin: 0 20px 20px 20px !important;
         padding-bottom: 14px !important;
     }}
     /* Menu Navigasi Sidebar */
