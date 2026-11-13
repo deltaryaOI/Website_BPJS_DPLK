@@ -2,6 +2,7 @@ import streamlit as st
 import os
 import pandas as pd
 import json
+import base64
 
 
 # ==============================================================================
@@ -69,71 +70,73 @@ pg = st.navigation({
 # ==============================================================================
 # 3. CUSTOM CSS PRESISI (GARIS ORANYE MUNCUL KEMBALI)
 # ==============================================================================
-st.markdown("""
-    <style>
-        /* Background & Border Kanan Sidebar */
-        [data-testid="stSidebar"] {
-            background-color: #F0F4F9 !important;
-            border-right: 3px solid #FF7A00 !important;
-        }
+# Logo HPI tunggal di puncak paling atas sidebar (berlaku untuk semua menu)
+def render_sidebar_logo():
+    if os.path.exists("logo.png"):
+        with open("logo.png", "rb") as img_f:
+            b64_logo = ""
+if os.path.exists("logo.png"):
+    with open("logo.png", "rb") as img_f:
+        b64_logo = base64.b64encode(img_f.read()).decode()
 
-        /* 1. Sembunyikan HANYA Garis Pemisah Bawaan Router Streamlit */
-        [data-testid="stSidebarNav"] div:has(> hr),
-        [data-testid="stSidebarNavSeparator"] {
-            display: none !important;
-        }
+st.markdown(f"""
+<style>
+    .stApp {{
+        background-color: #F4F6F9;
+    }}
+    /* Sidebar Gradasi Biru Muda ke Biru Tua */
+    [data-testid="stSidebar"] {{
+        background: linear-gradient(180deg, #0077B6 0%, #023E8A 45%, #0A2540 100%) !important;
+    }}
+    [data-testid="stSidebar"] label,
+    [data-testid="stSidebar"] p,
+    [data-testid="stSidebar"] span,
+    [data-testid="stSidebar"] h1,
+    [data-testid="stSidebar"] h2,
+    [data-testid="stSidebar"] h3 {{
+        color: #FFFFFF !important;
+    }}
+    /* Input & Dropdown Sidebar Tetap Putih dengan Teks Gelap */
+    [data-testid="stSidebar"] input,
+    [data-testid="stSidebar"] div[data-baseweb="select"] > div {{
+        background-color: #FFFFFF !important;
+        color: #0A2540 !important;
+    }}
+    [data-testid="stSidebar"] div[data-baseweb="select"] span {{
+        color: #0A2540 !important;
+    }}
 
-        /* 2. PAKSA MUNCULKAN GARIS ORANYE DI BAWAH NAVIGASI / DI ATAS LOGO */
-        [data-testid="stSidebar"] > div:first-child > hr,
-        [data-testid="stSidebarUserContent"] hr {
-            display: block !important;
-            border: none !important;
-            border-top: 3px solid #FF7A00 !important;
-            margin: 1.5rem 0 1rem 0 !important;
-            opacity: 1 !important;
-        }
-
-        /* 3. Teks "Home & Dashboard" (Menu Atas) */
-        [data-testid="stSidebarNavItems"] > li:first-child * {
-            font-size: 24px !important;
-            font-weight: 800 !important;
-            color: #0A2540 !important;
-        }
-
-        /* 4. Header "📌 Main Menu" */
-        [data-testid="stSidebarNavHeader"],
-        [data-testid="stSidebarNavHeader"] * {
-            font-size: 20px !important;
-            font-weight: 800 !important;
-            color: #0A2540 !important;
-            padding-top: 10px !important;
-        }
-
-        /* 5. Sub-menu (BPJS TK, Kes, DPLK, Upload) */
-        [data-testid="stSidebarNavItems"]:nth-of-type(2) * {
-            font-size: 18px !important;
-            font-weight: 600 !important;
-            color: #0A2540 !important;
-        }
-
-        /* Highlight Menu Aktif */
-        [data-testid="stSidebarNav"] a[aria-current="page"] {
-            background-color: #E2EAF4 !important;
-            border-radius: 8px !important;
-        }
-    </style>
+    /* LOGO HPI TUNGGAL DI PALING ATAS MENU NAVIGASI */
+    /* LOGO HPI TRANSPARAN LANGSUNG DI ATAS MENU NAVIGASI */
+    /* LOGO HPI TRANSPARAN LANGSUNG DI ATAS MENU NAVIGASI */
+    [data-testid="stSidebarNav"]::before {{
+        content: "";
+        display: block;
+        background-color: transparent;
+        background-image: url("data:image/png;base64,{b64_logo}");
+        background-repeat: no-repeat;
+        background-position: center center;
+        background-size: 85% auto;
+        height: 80px;
+        margin: 8px 16px 14px 16px;
+    }}
+    /* Menu Navigasi Sidebar */
+    [data-testid="stSidebarNav"] a {{
+        border-radius: 8px;
+        margin: 4px 12px;
+        padding: 8px 12px;
+    }}
+    [data-testid="stSidebarNav"] a:hover {{
+        background-color: rgba(255, 255, 255, 0.15) !important;
+    }}
+    [data-testid="stSidebarNav"] a[aria-current="page"] {{
+        background-color: #FF7A00 !important;
+        font-weight: 700 !important;
+    }}
+</style>
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 4. LOGO HALEYORA POWERINDO & GARIS ORANYE TERPUSAT
-# ==============================================================================
-if os.path.exists("logo.png"):
-    st.sidebar.markdown("---")  # Garis pemisah Oranye tebal 3px
-    col1, col2, col3 = st.sidebar.columns([1, 3, 1])
-    with col2:
-        st.image("logo.png", use_container_width=True)
-
-# ==============================================================================
-# 5. JALANKAN ROUTER NAVIGASI
+# 4. JALANKAN ROUTER NAVIGASI
 # ==============================================================================
 pg.run()

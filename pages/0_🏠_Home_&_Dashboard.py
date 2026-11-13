@@ -2,77 +2,171 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import gspread
+from google.oauth2.service_account import Credentials
+import datetime
+import re
 import io
+import os
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
-from google.oauth2.service_account import Credentials
-import datetime
-import json
-import os
-import re
+
+st.set_page_config(
+    page_title="Monitoring & SLA Control Tower - HPI",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
 # ==============================================================================
-# FUNGSI LOAD DATA RIIL DARI GOOGLE SHEETS (REKAP MONITORING KS & TK)
+# CUSTOM CSS: GRADASI SIDEBAR BIRU MUDA -> BIRU TUA, PUTIH & ORANYE AKSEN
 # ==============================================================================
-@st.cache_data(ttl=60, show_spinner="⏳ Sedang Memuat Data Monitoring Terbaru dari Google Sheets")
-def fetch_monitoring_data():
-    try:
-        scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-        creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
-        client = gspread.authorize(creds)
+st.markdown("""
+<style>
+    .stApp {
+        background-color: #F4F6F9;
+    }
+    .block-container {
+        padding-top: 1.3rem;
+        padding-bottom: 2rem;
+        max-width: 96%;
+    }
 
-        # 1. Baca Rekap_Monitoring_TK (HPI + ICON TK)
-        df_tk = pd.DataFrame(columns=["Timestamp", "Cabang", "Jumlah TK", "Total tagihan"])
-        try:
-            sh_tk = client.open_by_url(st.secrets["SPREADSHEET_URL"])
-            ws_tk = sh_tk.worksheet("Rekap_Monitoring_TK")
-            records_tk = ws_tk.get_all_records()
-            if records_tk:
-                df_tk = pd.DataFrame(records_tk)
-        except Exception as e:
-            st.warning(f"Info Sheet TK: {e}")
+    /* Sidebar Gradasi Biru Muda ke Biru Tua */
+    [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #0077B6 0%, #023E8A 45%, #0A2540 100%) !important;
+    }
+    [data-testid="stSidebar"] * {
+        color: #FFFFFF !important;
+    }
+    [data-testid="stSidebarNav"] a {
+        border-radius: 8px;
+        margin: 4px 8px;
+        padding: 8px 12px;
+        transition: all 0.2s ease;
+    }
+    [data-testid="stSidebarNav"] a:hover {
+        background-color: rgba(255, 255, 255, 0.15) !important;
+    }
+    [data-testid="stSidebarNav"] a[aria-current="page"] {
+        background-color: #FF7A00 !important;
+        color: #FFFFFF !important;
+        font-weight: 700 !important;
+    }
 
-        # 2. Baca Rekap_Monitoring_KS (HPI) + Rekap_Monitoring_KS_Icon (ICON)
-        list_df_ks = []
-        try:
-            sh_ks = client.open_by_url(st.secrets["SPREADSHEET_URL_KES"])
-            ws_ks = sh_ks.worksheet("Rekap_Monitoring_KS")
-            rec_ks = ws_ks.get_all_records()
-            if rec_ks:
-                list_df_ks.append(pd.DataFrame(rec_ks))
-        except Exception as e:
-            st.warning(f"Info Sheet KS HPI: {e}")
+    /* Pastikan Selectbox & Input Terlihat Jelas */
+    div[data-baseweb="select"] > div {
+        background-color: #FFFFFF !important;
+        color: #0A2540 !important;
+        border: 1px solid #CBD5E1 !important;
+        border-radius: 8px !important;
+    }
+    div[data-baseweb="select"] span {
+        color: #0A2540 !important;
+        font-weight: 600 !important;
+    }
 
-        try:
-            if "SPREADSHEET_URL_KES_ICON" in st.secrets:
-                sh_ks_icon = client.open_by_url(st.secrets["SPREADSHEET_URL_KES_ICON"])
-                # Cari tab yang namanya mengandung "rekap_monitoring_ks" (abaikan spasi/huruf besar)
-                ws_ks_icon = next(
-                    (ws for ws in sh_ks_icon.worksheets() if "rekap_monitoring_ks" in ws.title.strip().lower()),
-                    None
-                )
-                if ws_ks_icon:
-                    rec_ks_icon = ws_ks_icon.get_all_records()
-                    if rec_ks_icon:
-                        list_df_ks.append(pd.DataFrame(rec_ks_icon))
-        except Exception as e:
-            st.warning(f"Info Sheet KS ICON: {repr(e)}")
+    /* Top Header Bar */
+    .top-header-box {
+        background-color: #FFFFFF;
+        padding: 14px 22px;
+        border-radius: 12px;
+        box-shadow: 0 2px 8px rgba(10, 37, 64, 0.06);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
+        border-left: 5px solid #FF7A00;
+    }
+    .date-pill {
+        background-color: #0A2540;
+        color: #FFFFFF;
+        padding: 7px 16px;
+        border-radius: 20px;
+        font-size: 13px;
+        font-weight: 600;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+    }
 
-        df_ks = pd.concat(list_df_ks, ignore_index=True) if list_df_ks else pd.DataFrame(columns=["Timestamp", "Cabang", "Jumlah TK", "Total tagihan"])
+    /* 3 Kartu KPI Utama */
+    .kpi-card {
+        background-color: #FFFFFF;
+        border-radius: 14px;
+        padding: 20px 22px;
+        box-shadow: 0 2px 10px rgba(10, 37, 64, 0.05);
+        border: 1px solid #E6ECF2;
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        height: 100%;
+    }
+    .kpi-icon-navy {
+        background-color: #0A2540;
+        color: #FFFFFF;
+        width: 54px;
+        height: 54px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 23px;
+        flex-shrink: 0;
+    }
+    .kpi-icon-orange {
+        background-color: #FF7A00;
+        color: #FFFFFF;
+        width: 54px;
+        height: 54px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 23px;
+        flex-shrink: 0;
+    }
+    .kpi-icon-blue {
+        background-color: #0077B6;
+        color: #FFFFFF;
+        width: 54px;
+        height: 54px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 23px;
+        flex-shrink: 0;
+    }
+    .kpi-title {
+        font-size: 13px;
+        color: #5A6B7C;
+        font-weight: 600;
+        margin-bottom: 3px;
+    }
+    .kpi-value {
+        font-size: 22px;
+        color: #0A2540;
+        font-weight: 800;
+        line-height: 1.2;
+    }
+    .kpi-sub {
+        font-size: 12px;
+        color: #16A34A;
+        font-weight: 600;
+        margin-top: 4px;
+    }
+</style>
+""", unsafe_allow_html=True)
 
-        return df_ks, df_tk
-    except Exception as e:
-        st.error(f"Gagal terhubung ke Google Sheets: {e}")
-        return pd.DataFrame(), pd.DataFrame()
-
+# ==============================================================================
+# HELPER FUNCTIONS: PARSING ANGKA INDONESIA & FORMAT RUPIAH
+# ==============================================================================
 def clean_numeric(val):
     if pd.isna(val) or val == "":
         return 0.0
     if isinstance(val, int):
         return float(val)
-    
-    # Ubah float maupun string ke teks dulu agar format 1.203 (ribuan) ikut terdeteksi
     s = str(val).strip()
     s = re.sub(r'[^\d.,-]', '', s)
     if not s:
@@ -93,300 +187,94 @@ def clean_numeric(val):
             s = s.replace(",", "")
         else:
             s = s.replace(",", ".")
+
     try:
         return float(s)
     except ValueError:
         return 0.0
 
-def parse_monitoring_df(df, tahun_target, bulan_target_num):
-    if df.empty or "Timestamp" not in df.columns:
-        return pd.DataFrame(columns=["Cabang", "Timestamp_DT", "Tanggal_Str", "Hari", "Jumlah TK", "Total tagihan"])
+def format_rp(val):
+    return f"Rp. {val:,.0f}".replace(",", ".")
 
-    df = df.copy()
+# ==============================================================================
+# DATA FETCHING DARI GOOGLE SHEETS
+# ==============================================================================
+@st.cache_data(ttl=60, show_spinner="⏳ Memuat data terbaru dari Google Sheets...")
+def fetch_monitoring_data():
+    try:
+        scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+        creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
+        client = gspread.authorize(creds)
+
+        # 1. Rekap_Monitoring_TK
+        df_tk = pd.DataFrame(columns=["Timestamp", "Cabang", "Jumlah TK", "Total tagihan"])
+        try:
+            sh_tk = client.open_by_url(st.secrets["SPREADSHEET_URL"])
+            ws_tk = next((ws for ws in sh_tk.worksheets() if "rekap_monitoring_tk" in ws.title.strip().lower()), None)
+            if ws_tk:
+                rec_tk = ws_tk.get_all_records()
+                if rec_tk:
+                    df_tk = pd.DataFrame(rec_tk)
+        except Exception as e:
+            st.warning(f"Info Sheet TK: {repr(e)}")
+
+        # 2. Rekap_Monitoring_KS (HPI + ICON)
+        list_df_ks = []
+        try:
+            sh_ks = client.open_by_url(st.secrets["SPREADSHEET_URL_KES"])
+            ws_ks = next((ws for ws in sh_ks.worksheets() if "rekap_monitoring_ks" in ws.title.strip().lower()), None)
+            if ws_ks:
+                rec_ks = ws_ks.get_all_records()
+                if rec_ks:
+                    list_df_ks.append(pd.DataFrame(rec_ks))
+        except Exception as e:
+            st.warning(f"Info Sheet KS HPI: {repr(e)}")
+
+        try:
+            if "SPREADSHEET_URL_KES_ICON" in st.secrets:
+                sh_ks_icon = client.open_by_url(st.secrets["SPREADSHEET_URL_KES_ICON"])
+                ws_ks_icon = next((ws for ws in sh_ks_icon.worksheets() if "rekap_monitoring_ks" in ws.title.strip().lower()), None)
+                if ws_ks_icon:
+                    rec_ks_icon = ws_ks_icon.get_all_records()
+                    if rec_ks_icon:
+                        list_df_ks.append(pd.DataFrame(rec_ks_icon))
+        except Exception as e:
+            st.warning(f"Info Sheet KS ICON: {repr(e)}")
+
+        df_ks = pd.concat(list_df_ks, ignore_index=True) if list_df_ks else pd.DataFrame(columns=["Timestamp", "Cabang", "Jumlah TK", "Total tagihan"])
+        return df_ks, df_tk
+    except Exception as e:
+        st.error(f"Gagal terhubung ke Google Sheets: {e}")
+        return pd.DataFrame(), pd.DataFrame()
+
+def parse_monitoring_df(df_raw, tahun, bulan_angka, limit_tgl):
+    if df_raw is None or df_raw.empty or "Timestamp" not in df_raw.columns:
+        return pd.DataFrame(columns=["Cabang", "Timestamp_DT", "Tanggal_Upload", "Jumlah TK", "Total tagihan", "Status_SLA"])
+
+    df = df_raw.copy()
     df["Timestamp_DT"] = pd.to_datetime(df["Timestamp"], errors="coerce")
     df = df.dropna(subset=["Timestamp_DT"])
+    df = df[(df["Timestamp_DT"].dt.year == int(tahun)) & (df["Timestamp_DT"].dt.month == int(bulan_angka))]
 
-    # Filter Tahun & Bulan
-    df = df[(df["Timestamp_DT"].dt.year == int(tahun_target)) & (df["Timestamp_DT"].dt.month == int(bulan_target_num))]
     if df.empty:
-        return pd.DataFrame(columns=["Cabang", "Timestamp_DT", "Tanggal_Str", "Hari", "Jumlah TK", "Total tagihan"])
+        return pd.DataFrame(columns=["Cabang", "Timestamp_DT", "Tanggal_Upload", "Jumlah TK", "Total tagihan", "Status_SLA"])
 
     df["Cabang"] = df["Cabang"].astype(str).str.strip().str.upper()
     df["Jumlah TK"] = df["Jumlah TK"].apply(clean_numeric).astype(int)
     df["Total tagihan"] = df["Total tagihan"].apply(clean_numeric)
 
-    # Urutkan berdasarkan waktu dan ambil entri terbaru jika cabang melakukan revisi/sync ulang
     df = df.sort_values("Timestamp_DT").groupby("Cabang", as_index=False).last()
-    df["Hari"] = df["Timestamp_DT"].dt.day
-    df["Tanggal_Str"] = df["Timestamp_DT"].dt.strftime("%d %b %Y (%H:%M)")
+    df["Tanggal_Upload"] = df["Timestamp_DT"].dt.day
+    df["Status_SLA"] = df["Tanggal_Upload"].apply(lambda d: f"✅ ON-TIME (Tgl {d})" if d <= limit_tgl else f"⚠️ LATE (Tgl {d})")
     return df
 
-def hitung_sla(hari, batas_tgl):
-    if hari <= batas_tgl:
-        return 100.0
-    selisih = hari - batas_tgl
-    skor = max(0.0, 100.0 - (selisih * 2.5))
-    return round(skor, 1)
-
 # ==============================================================================
-# HERO SECTION & FILTER
+# GENERATOR EXCEL SLA TAHUNAN (IDENTIK PERSENTASE_PENILAIAN_CABANG.XLSX)
 # ==============================================================================
-col_title, col_refresh = st.columns([5, 1])
-with col_title:
-    st.title("📊 Dashboard Monitoring SLA & Portal BPJS")
-    st.caption("Control Tower Kepatuhan SLA Pengiriman Cabang & Visualisasi Data Riil Real-Time")
-with col_refresh:
-    st.markdown("<br>", unsafe_allow_html=True)
-    if st.button("🔄 Refresh Data", use_container_width=True):
-        st.cache_data.clear()
-        st.rerun()
-
-st.markdown("---")
-
-BULAN_MAP = {
-    "01. Januari": 1, "02. Februari": 2, "03. Maret": 3, "04. April": 4,
-    "05. Mei": 5, "06. Juni": 6, "07. Juli": 7, "08. Agustus": 8,
-    "09. September": 9, "10. Oktober": 10, "11. November": 11, "12. Desember": 12
-}
-
-now_wib = datetime.datetime.utcnow() + datetime.timedelta(hours=7)
-default_bulan_idx = now_wib.month - 1
-
-f1, f2, f3 = st.columns(3)
-with f1:
-    sel_tahun = st.selectbox("📅 Pilih Tahun Monitoring", ["2026", "2027", "2028"], index=0)
-with f2:
-    sel_bulan_label = st.selectbox("📆 Pilih Bulan Target", list(BULAN_MAP.keys()), index=default_bulan_idx)
-    sel_bulan_num = BULAN_MAP[sel_bulan_label]
-
-# Muat Data Riil dari Google Sheets
-raw_df_ks, raw_df_tk = fetch_monitoring_data()
-df_ks_filtered = parse_monitoring_df(raw_df_ks, sel_tahun, sel_bulan_num)
-df_tk_filtered = parse_monitoring_df(raw_df_tk, sel_tahun, sel_bulan_num)
-
-# Daftar master seluruh cabang (gabungan dari JSON + yang tercatat di Sheet)
-master_cabang = [
-    "BANGKA BELITUNG", "BANTEN", "DKI JAKARTA", "ICON", "JAWA BARAT",
-    "JAWA TENGAH", "JAWA TIMUR", "MEDAN", "PADANG", "PALEMBANG",
-    "PEKANBARU", "SIBOLGA NIAS"
-]
-semua_cabang_terdeteksi = sorted(list(set(master_cabang) | set(df_ks_filtered["Cabang"]) | set(df_tk_filtered["Cabang"])))
-
-with f3:
-    sel_cabang = st.selectbox("🏢 Filter Cabang", ["Semua Cabang"] + semua_cabang_terdeteksi)
-
-# ==============================================================================
-# PENYUSUNAN MATRIKS SLA & METRIK
-# ==============================================================================
-rows_sla = []
-on_time_kes_count = 0
-late_kes_count = 0
-on_time_tk_count = 0
-late_tk_count = 0
-list_sla_kes = []
-list_sla_tk = []
-
-cabang_loop = semua_cabang_terdeteksi if sel_cabang == "Semua Cabang" else [sel_cabang]
-
-for idx, cab in enumerate(cabang_loop, start=1):
-    row_ks = df_ks_filtered[df_ks_filtered["Cabang"] == cab]
-    row_tk = df_tk_filtered[df_tk_filtered["Cabang"] == cab]
-
-    # Status Kesehatan (Limit Tgl 2)
-    if not row_ks.empty:
-        tgl_ks_str = row_ks.iloc[0]["Tanggal_Str"]
-        hari_ks = int(row_ks.iloc[0]["Hari"])
-        sla_ks_val = hitung_sla(hari_ks, 2)
-        sla_ks_str = f"{sla_ks_val:g}%"
-        list_sla_kes.append(sla_ks_val)
-        if hari_ks <= 2:
-            on_time_kes_count += 1
-            stat_ks = "OK"
-        else:
-            late_kes_count += 1
-            stat_ks = "LATE"
-    else:
-        tgl_ks_str = "Menunggu (Limit Tgl 2)"
-        sla_ks_str = "-"
-        stat_ks = "WAIT"
-
-    # Status Ketenagakerjaan (Limit Tgl 16)
-    if not row_tk.empty:
-        tgl_tk_str = row_tk.iloc[0]["Tanggal_Str"]
-        hari_tk = int(row_tk.iloc[0]["Hari"])
-        sla_tk_val = hitung_sla(hari_tk, 16)
-        sla_tk_str = f"{sla_tk_val:g}%"
-        list_sla_tk.append(sla_tk_val)
-        if hari_tk <= 16:
-            on_time_tk_count += 1
-            stat_tk = "OK"
-        else:
-            late_tk_count += 1
-            stat_tk = "LATE"
-    else:
-        tgl_tk_str = "Menunggu (Limit Tgl 16)"
-        sla_tk_str = "-"
-        stat_tk = "WAIT"
-
-    # Penentuan Status Gabungan
-    if stat_ks == "OK" and stat_tk == "OK":
-        status_total = "🟢 COMPLETE & ON TIME"
-    elif "LATE" in (stat_ks, stat_tk):
-        status_total = "🟡 LATE SUBMISSION"
-    elif stat_ks == "OK" and stat_tk == "WAIT":
-        status_total = "🔵 KES OK | MENUNGGU TK"
-    elif stat_ks == "WAIT" and stat_tk == "OK":
-        status_total = "🔵 TK OK | MENUNGGU KES"
-    else:
-        status_total = "⚪ BELUM UPLOAD"
-
-    rows_sla.append({
-        "No": idx,
-        "Cabang": cab,
-        "Tgl Upload Kes": tgl_ks_str,
-        "SLA Kes": sla_ks_str,
-        "Tgl Upload TK": tgl_tk_str,
-        "SLA TK": sla_tk_str,
-        "Status Total": status_total
-    })
-
-df_sla_real = pd.DataFrame(rows_sla)
-avg_sla_kes = f"{sum(list_sla_kes)/len(list_sla_kes):.2f}%" if list_sla_kes else "-"
-avg_sla_tk = f"{sum(list_sla_tk)/len(list_sla_tk):.2f}%" if list_sla_tk else "-"
-
-# ==============================================================================
-# 1. EXECUTIVE SUMMARY (METRIC CARDS REAL-TIME)
-# ==============================================================================
-m1, m2, m3, m4 = st.columns(4)
-with m1:
-    st.metric(label="🟢 Cabang On-Time (Kes)", value=f"{on_time_kes_count} Cabang", delta=f"Late: {late_kes_count} Cabang", delta_color="off")
-with m2:
-    st.metric(label="⭐ Rata-rata SLA Kesehatan", value=avg_sla_kes, delta="Limit Tgl 2")
-with m3:
-    st.metric(label="🟢 Cabang On-Time (TK)", value=f"{on_time_tk_count} Cabang", delta=f"Late: {late_tk_count} Cabang", delta_color="off")
-with m4:
-    st.metric(label="⭐ Rata-rata SLA BPJS TK", value=avg_sla_tk, delta="Limit Tgl 16")
-
-st.markdown("---")
-
-# ==============================================================================
-# 2. VISUALISASI GRAFIK TREN (DATA RIIL DARI LOGGING SHEET)
-# ==============================================================================
-st.subheader(f"📈 Tren Rekapitulasi Tagihan & Tenaga Kerja ({sel_bulan_label} {sel_tahun})")
-
-tab_chart1, tab_chart2, tab_chart3, tab_chart4 = st.tabs([
-    "💰 Tagihan BPJS Kesehatan",
-    "👥 Tenaga Kerja BPJS Kesehatan",
-    "💰 Tagihan BPJS Ketenagakerjaan",
-    "👥 Tenaga Kerja BPJS Ketenagakerjaan"
-])
-
-with tab_chart1:
-    if not df_ks_filtered.empty:
-        df_ks_plot = df_ks_filtered.copy()
-        df_ks_plot["Label_Rp"] = df_ks_plot["Total tagihan"].apply(lambda x: f"Rp. {x:,.0f}".replace(",", "."))
-        
-        fig_ks_bayar = px.bar(
-            df_ks_plot,
-            x="Cabang",
-            y="Total tagihan",
-            text="Label_Rp",
-            color="Cabang",
-            title=f"Total Tagihan BPJS Kesehatan per Cabang ({sel_bulan_label} {sel_tahun})",
-            color_discrete_sequence=px.colors.qualitative.Bold
-        )
-        fig_ks_bayar.update_traces(
-            textposition="outside",
-            hovertemplate="<b>%{x}</b><br>Total Tagihan: %{text}<extra></extra>"
-        )
-        fig_ks_bayar.update_layout(
-            yaxis_title="Rupiah (Rp)",
-            showlegend=False,
-            uniformtext_minsize=8,
-            uniformtext_mode="show"
-        )
-        st.plotly_chart(fig_ks_bayar, use_container_width=True)
-    else:
-        st.info("Belum ada data log BPJS Kesehatan yang masuk pada periode ini.")
-
-with tab_chart2:
-    if not df_ks_filtered.empty:
-        fig_ks_tk = px.bar(
-            df_ks_filtered, x="Cabang", y="Jumlah TK", text="Jumlah TK", color="Cabang",
-            title=f"Jumlah Tenaga Kerja BPJS Kesehatan ({sel_bulan_label} {sel_tahun})",
-            color_discrete_sequence=px.colors.qualitative.Prism
-        )
-        fig_ks_tk.update_layout(showlegend=False)
-        st.plotly_chart(fig_ks_tk, use_container_width=True)
-    else:
-        st.info("Belum ada data log Tenaga Kerja Kesehatan pada periode ini.")
-
-with tab_chart3:
-    if not df_tk_filtered.empty:
-        df_tk_plot = df_tk_filtered.copy()
-        df_tk_plot["Label_Rp"] = df_tk_plot["Total tagihan"].apply(lambda x: f"Rp. {x:,.0f}".replace(",", "."))
-        
-        fig_tk_bayar = px.bar(
-            df_tk_plot,
-            x="Cabang",
-            y="Total tagihan",
-            text="Label_Rp",
-            color="Cabang",
-            title=f"Total Tagihan BPJS Ketenagakerjaan per Cabang ({sel_bulan_label} {sel_tahun})",
-            color_discrete_sequence=px.colors.qualitative.Bold
-        )
-        fig_tk_bayar.update_traces(
-            textposition="outside",
-            hovertemplate="<b>%{x}</b><br>Total Tagihan: %{text}<extra></extra>"
-        )
-        fig_tk_bayar.update_layout(
-            yaxis_title="Rupiah (Rp)",
-            showlegend=False,
-            uniformtext_minsize=8,
-            uniformtext_mode="show"
-        )
-        st.plotly_chart(fig_tk_bayar, use_container_width=True)
-    else:
-        st.info("Belum ada data log BPJS Ketenagakerjaan yang masuk pada periode ini.")
-
-with tab_chart4:
-    if not df_tk_filtered.empty:
-        fig_tk_jml = px.bar(
-            df_tk_filtered, x="Cabang", y="Jumlah TK", text="Jumlah TK", color="Cabang",
-            title=f"Jumlah Tenaga Kerja BPJS Ketenagakerjaan ({sel_bulan_label} {sel_tahun})",
-            color_discrete_sequence=px.colors.qualitative.Prism
-        )
-        fig_tk_jml.update_layout(showlegend=False)
-        st.plotly_chart(fig_tk_jml, use_container_width=True)
-    else:
-        st.info("Belum ada data log Tenaga Kerja Ketenagakerjaan pada periode ini.")
-
-# ==============================================================================
-# 3. TABEL CONTROL TOWER MONITORING SLA REAL
-# ==============================================================================
-st.subheader("📋 Matriks Status Pengiriman & SLA Cabang")
-st.caption("Limit Target Pengiriman: BPJS Kesehatan (Maks. Tanggal 2) | BPJS Ketenagakerjaan (Maks. Tanggal 16)")
-
-st.dataframe(
-    df_sla_real,
-    use_container_width=True,
-    hide_index=True,
-    column_config={
-        "No": st.column_config.TextColumn("No", width="small"),
-        "Cabang": st.column_config.TextColumn("Cabang", width="large"),
-        "Tgl Upload Kes": st.column_config.TextColumn("Tgl Upload Kes", width="medium"),
-        "SLA Kes": st.column_config.TextColumn("SLA Kes", width="small"),
-        "Tgl Upload TK": st.column_config.TextColumn("Tgl Upload TK", width="medium"),
-        "SLA TK": st.column_config.TextColumn("SLA TK", width="small"),
-        "Status Total": st.column_config.TextColumn("Status Total", width="medium"),
-    }
-)
 def generate_excel_sla_tahunan(raw_df_ks, raw_df_tk, tahun_target):
     wb = openpyxl.Workbook()
-    # Hapus sheet default
     wb.remove(wb.active)
 
-    # Mapping nama cabang di log ke nama baku di tabel SLA Excel
     alias_cabang = {
         "BANGKA BELITUNG": "BABEL", "BABEL": "BABEL",
         "BANTEN": "BANTEN",
@@ -401,18 +289,15 @@ def generate_excel_sla_tahunan(raw_df_ks, raw_df_tk, tahun_target):
         "PEKANBARU": "PEKANBARU",
         "SIBOLGA NIAS": "SIBOLGA", "SIBOLGA": "SIBOLGA"
     }
-
     daftar_cabang = [
         "BABEL", "BANTEN", "DKI", "ICON", "JABAR", "JAWA TIMUR",
         "DIY", "MEDAN", "PADANG", "PALEMBANG", "PEKANBARU", "SIBOLGA"
     ]
-
     bulan_list = [
         "JANUARI", "FEBRUARI", "MARET", "APRIL", "MEI", "JUNI",
         "JULI", "AGUSTUS", "SEPTEMBER", "OKTOBER", "NOPEMBER", "DESEMBER"
     ]
 
-    # Ekstrak tanggal upload per (cabang, bulan) untuk tahun terpilih
     def extract_tgl_map(df_raw):
         hasil = {}
         if df_raw is None or df_raw.empty or "Timestamp" not in df_raw.columns:
@@ -433,16 +318,15 @@ def generate_excel_sla_tahunan(raw_df_ks, raw_df_tk, tahun_target):
 
     map_ks = extract_tgl_map(raw_df_ks)
     map_tk = extract_tgl_map(raw_df_tk)
-    map_dplk = {}  # Siap terisi otomatis begitu modul DPLK aktif
+    map_dplk = {}
 
-    # Styling Excel
     font_title = Font(name="Calibri", size=12, bold=True, color="0A2540")
     font_hdr = Font(name="Calibri", size=10, bold=True, color="FFFFFF")
     font_subhdr = Font(name="Calibri", size=10, bold=True, color="0A2540")
     font_data = Font(name="Calibri", size=10)
     font_bold = Font(name="Calibri", size=10, bold=True)
 
-    fill_navy = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
+    fill_navy = PatternFill(start_color="0A2540", end_color="0A2540", fill_type="solid")
     fill_orange = PatternFill(start_color="FF7A00", end_color="FF7A00", fill_type="solid")
     fill_sub = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
     fill_total = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
@@ -469,12 +353,9 @@ def generate_excel_sla_tahunan(raw_df_ks, raw_df_tk, tahun_target):
 
     for sheet_name, target_tgl, data_map, min_pct, tabel_skor in konfigurasi_sheet:
         ws = wb.create_sheet(title=sheet_name)
-
-        # Judul Atas
         ws["A1"] = f"PERSENTASE PENILAIAN KEPATUHAN SLA {sheet_name} - TAHUN {tahun_target}"
         ws["A1"].font = font_title
 
-        # Merge Header Utama (Baris 2-4)
         ws.merge_cells("A2:A4")
         ws["A2"] = "NO"
         ws.merge_cells("B2:B4")
@@ -501,7 +382,6 @@ def generate_excel_sla_tahunan(raw_df_ks, raw_df_tk, tahun_target):
         ws["D2"].font = font_hdr
         ws["D2"].alignment = align_center
 
-        # Sub-Header Bulan (JANUARI - DESEMBER)
         pct_cols = []
         for m_idx, nama_bln in enumerate(bulan_list):
             c_tgl = 4 + (m_idx * 2)
@@ -527,7 +407,6 @@ def generate_excel_sla_tahunan(raw_df_ks, raw_df_tk, tahun_target):
                 ws.cell(r_h, c_tgl).border = border_all
                 ws.cell(r_h, c_pct).border = border_all
 
-        # Isi Data 12 Cabang (Baris 5 - 16)
         min_pct_str = f"{int(min_pct*100)}%"
         for idx_cab, nama_cab in enumerate(daftar_cabang, start=1):
             r = 4 + idx_cab
@@ -554,7 +433,6 @@ def generate_excel_sla_tahunan(raw_df_ks, raw_df_tk, tahun_target):
                 cell_tgl.font = font_data
                 cell_tgl.border = border_all
 
-                # Rumus VLOOKUP identik dengan persentase_penilaian_cabang.xlsx
                 formula_pct = (
                     f'=IFERROR(IF({let_tgl}{r}>0,'
                     f'IF(({let_tgl}{r}-$C{r})>5,{min_pct_str},'
@@ -567,7 +445,6 @@ def generate_excel_sla_tahunan(raw_df_ks, raw_df_tk, tahun_target):
                 cell_pct.font = font_data
                 cell_pct.border = border_all
 
-            # Kolom AB: Rata-rata Total % per Cabang selama setahun
             avg_refs = ",".join([f"{col_let}{r}" for col_let in pct_cols])
             cell_tot = ws.cell(r, 28, f'=IFERROR(AVERAGE({avg_refs}),"")')
             cell_tot.number_format = "0.0%"
@@ -576,7 +453,6 @@ def generate_excel_sla_tahunan(raw_df_ks, raw_df_tk, tahun_target):
             cell_tot.fill = fill_total
             cell_tot.border = border_all
 
-        # Baris 17: Rata-Rata Nasional per Bulan
         ws.cell(17, 2, "RATA-RATA NASIONAL").font = font_bold
         ws.cell(17, 2).alignment = align_left
         for c_i in range(1, 29):
@@ -590,7 +466,6 @@ def generate_excel_sla_tahunan(raw_df_ks, raw_df_tk, tahun_target):
             c_avg.font = font_bold
             c_avg.alignment = align_center
 
-        # Tabel Referensi Penilaian (Baris 19 - 32)
         ws.cell(19, 2, "Penilaian").font = font_bold
         ws.cell(19, 3, "Selisih Hari").font = font_hdr
         ws.cell(19, 3).fill = fill_navy
@@ -615,7 +490,6 @@ def generate_excel_sla_tahunan(raw_df_ks, raw_df_tk, tahun_target):
             c2.font = font_data
             c2.border = border_all
 
-        # Atur Lebar Kolom
         ws.column_dimensions["A"].width = 5
         ws.column_dimensions["B"].width = 18
         ws.column_dimensions["C"].width = 12
@@ -628,10 +502,263 @@ def generate_excel_sla_tahunan(raw_df_ks, raw_df_tk, tahun_target):
     output.seek(0)
     return output.getvalue()
 
+# ==============================================================================
+# LOAD DATA & TOP HEADER BAR (HANYA TANGGAL SAJA)
+# ==============================================================================
+raw_df_ks, raw_df_tk = fetch_monitoring_data()
+wib_now = datetime.datetime.utcnow() + datetime.timedelta(hours=7)
+
+st.markdown(f"""
+<div class="top-header-box">
+    <div>
+        <div style="font-size:19px; font-weight:800; color:#0A2540;">📊 Executive Monitoring & SLA Control Tower</div>
+        <div style="font-size:12.5px; color:#64748B;">PT Haleyora Powerindo • Sinkronisasi Real-Time BPJS Kesehatan, Ketenagakerjaan & DPLK</div>
+    </div>
+    <div class="date-pill">
+        <span>📅 {wib_now.strftime("%d %b %Y, %H:%M WIB")}</span>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+# ==============================================================================
+# FILTER BAR
+# ==============================================================================
+col_f1, col_f2, col_f3, col_f4 = st.columns([1.2, 1.5, 1.5, 1])
+with col_f1:
+    tahun_opsi = [2025, 2026, 2027, 2028]
+    idx_thn = tahun_opsi.index(wib_now.year) if wib_now.year in tahun_opsi else 1
+    sel_tahun = st.selectbox("📅 Tahun Monitoring", tahun_opsi, index=idx_thn)
+
+bulan_dict = {
+    1: "Januari", 2: "Februari", 3: "Maret", 4: "April",
+    5: "Mei", 6: "Juni", 7: "Juli", 8: "Agustus",
+    9: "September", 10: "Oktober", 11: "November", 12: "Desember"
+}
+with col_f2:
+    sel_bulan_num = st.selectbox("🗓️ Bulan Target", list(bulan_dict.keys()), index=wib_now.month - 1, format_func=lambda x: bulan_dict[x])
+    sel_bulan_label = bulan_dict[sel_bulan_num]
+
+df_ks_parsed = parse_monitoring_df(raw_df_ks, sel_tahun, sel_bulan_num, limit_tgl=2)
+df_tk_parsed = parse_monitoring_df(raw_df_tk, sel_tahun, sel_bulan_num, limit_tgl=16)
+
+semua_cabang_aktif = sorted(list(set(df_ks_parsed["Cabang"].tolist() + df_tk_parsed["Cabang"].tolist())))
+with col_f3:
+    sel_cabang = st.selectbox("🏢 Filter Cabang", ["Semua Cabang"] + semua_cabang_aktif)
+
+with col_f4:
+    st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
+    if st.button("🔄 Refresh Data", use_container_width=True, type="primary"):
+        st.cache_data.clear()
+        st.rerun()
+
+if sel_cabang != "Semua Cabang":
+    df_ks_filtered = df_ks_parsed[df_ks_parsed["Cabang"] == sel_cabang]
+    df_tk_filtered = df_tk_parsed[df_tk_parsed["Cabang"] == sel_cabang]
+else:
+    df_ks_filtered = df_ks_parsed
+    df_tk_filtered = df_tk_parsed
+
+# Hitung 3 Metrik Utama
+tot_tagihan_ks = df_ks_filtered["Total tagihan"].sum() if not df_ks_filtered.empty else 0.0
+tot_tk_ks = int(df_ks_filtered["Jumlah TK"].sum()) if not df_ks_filtered.empty else 0
+tot_tagihan_tk = df_tk_filtered["Total tagihan"].sum() if not df_tk_filtered.empty else 0.0
+tot_tk_tk = int(df_tk_filtered["Jumlah TK"].sum()) if not df_tk_filtered.empty else 0
+
+# ==============================================================================
+# BARIS 1: 3 KARTU KPI (TAGIHAN KES, TAGIHAN TK, TOTAL TENAGA KERJA)
+# ==============================================================================
+k1, k2, k3 = st.columns(3)
+
+with k1:
+    st.markdown(f"""
+    <div class="kpi-card">
+        <div class="kpi-icon-navy">🏥</div>
+        <div>
+            <div class="kpi-title">Total Tagihan BPJS Kesehatan</div>
+            <div class="kpi-value">{format_rp(tot_tagihan_ks)}</div>
+            <div class="kpi-sub">▲ {len(df_ks_filtered)} Cabang Tersinkronisasi</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with k2:
+    st.markdown(f"""
+    <div class="kpi-card">
+        <div class="kpi-icon-orange">👷</div>
+        <div>
+            <div class="kpi-title">Total Tagihan BPJS Ketenagakerjaan</div>
+            <div class="kpi-value">{format_rp(tot_tagihan_tk)}</div>
+            <div class="kpi-sub">▲ {len(df_tk_filtered)} Cabang Tersinkronisasi</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with k3:
+    st.markdown(f"""
+    <div class="kpi-card">
+        <div class="kpi-icon-blue">👥</div>
+        <div>
+            <div class="kpi-title">Total Tenaga Kerja Terdaftar</div>
+            <div class="kpi-value">{tot_tk_tk:,} TK • {tot_tk_ks:,} Kes</div>
+            <div class="kpi-sub">● Aktif Periode {sel_bulan_label} {sel_tahun}</div>
+        </div>
+    </div>
+    """.replace(",", "."), unsafe_allow_html=True)
+
 st.markdown("<br>", unsafe_allow_html=True)
+
+# ==============================================================================
+# BARIS 2: GRAFIK TREN REKAPITULASI (LEBAR PENUH TANPA PEMISAH ANEH)
+# ==============================================================================
+hdr_c1, hdr_c2 = st.columns([2, 1])
+with hdr_c1:
+    st.subheader(f"📈 Tren Rekapitulasi per Cabang ({sel_bulan_label} {sel_tahun})")
+with hdr_c2:
+    mode_grafik = st.selectbox(
+        "Pilih Kategori Grafik",
+        ["Tagihan BPJS Ketenagakerjaan", "Tenaga Kerja BPJS Ketenagakerjaan", "Tagihan BPJS Kesehatan", "Tenaga Kerja BPJS Kesehatan"],
+        label_visibility="collapsed"
+    )
+
+if mode_grafik == "Tagihan BPJS Ketenagakerjaan":
+    df_plot, y_col, is_rp, bar_color = df_tk_filtered.copy(), "Total tagihan", True, "#0A2540"
+elif mode_grafik == "Tenaga Kerja BPJS Ketenagakerjaan":
+    df_plot, y_col, is_rp, bar_color = df_tk_filtered.copy(), "Jumlah TK", False, "#FF7A00"
+elif mode_grafik == "Tagihan BPJS Kesehatan":
+    df_plot, y_col, is_rp, bar_color = df_ks_filtered.copy(), "Total tagihan", True, "#0077B6"
+else:
+    df_plot, y_col, is_rp, bar_color = df_ks_filtered.copy(), "Jumlah TK", False, "#FF7A00"
+
+if not df_plot.empty:
+    if is_rp:
+        df_plot["Label_Val"] = df_plot[y_col].apply(format_rp)
+    else:
+        df_plot["Label_Val"] = df_plot[y_col].apply(lambda x: f"{x:,.0f}".replace(",", "."))
+
+    fig_bar = px.bar(
+        df_plot,
+        x="Cabang",
+        y=y_col,
+        text="Label_Val",
+        color_discrete_sequence=[bar_color]
+    )
+    fig_bar.update_traces(
+        textposition="outside",
+        marker_line_width=0,
+        hovertemplate="<b>%{x}</b><br>" + mode_grafik + ": %{text}<extra></extra>"
+    )
+    fig_bar.update_layout(
+        plot_bgcolor="#FFFFFF",
+        paper_bgcolor="#FFFFFF",
+        margin=dict(t=30, b=20, l=15, r=15),
+        height=350,
+        xaxis_title="",
+        yaxis_title="",
+        showlegend=False,
+        yaxis=dict(gridcolor="#E2E8F0")
+    )
+    st.plotly_chart(fig_bar, use_container_width=True)
+else:
+    st.info(f"Belum ada data {mode_grafik} pada periode {sel_bulan_label} {sel_tahun}.")
+
+st.markdown("---")
+
+# ==============================================================================
+# BARIS 3: TABEL REKAPITULASI CABANG & DOWNLOAD EXCEL SLA TAHUNAN
+# ==============================================================================
+master_cabang = [
+    "BABEL", "BANTEN", "DKI", "ICON", "JABAR", "JAWA TIMUR",
+    "DIY", "MEDAN", "PADANG", "PALEMBANG", "PEKANBARU", "SIBOLGA"
+]
+alias_rev = {
+    "BANGKA BELITUNG": "BABEL", "DKI JAKARTA": "DKI", "JAWA BARAT": "JABAR",
+    "JAWA TENGAH": "DIY", "SIBOLGA NIAS": "SIBOLGA"
+}
+
+map_ks_row = {}
+for _, r in df_ks_parsed.iterrows():
+    c_std = alias_rev.get(r["Cabang"], r["Cabang"])
+    map_ks_row[c_std] = r
+
+map_tk_row = {}
+for _, r in df_tk_parsed.iterrows():
+    c_std = alias_rev.get(r["Cabang"], r["Cabang"])
+    map_tk_row[c_std] = r
+
+rekap_rows = []
+for idx_c, cab in enumerate(master_cabang, start=1):
+    if sel_cabang != "Semua Cabang" and alias_rev.get(sel_cabang, sel_cabang) != cab:
+        continue
+    r_ks = map_ks_row.get(cab)
+    r_tk = map_tk_row.get(cab)
+
+    rekap_rows.append({
+        "No": idx_c,
+        "Cabang / Unit": cab,
+        "SLA BPJS Kes (Limit Tgl 2)": r_ks["Status_SLA"] if r_ks is not None else "⏳ Belum Upload",
+        "TK Kes": int(r_ks["Jumlah TK"]) if r_ks is not None else 0,
+        "Tagihan BPJS Kes": format_rp(r_ks["Total tagihan"]) if r_ks is not None else "Rp. 0",
+        "SLA BPJS TK (Limit Tgl 16)": r_tk["Status_SLA"] if r_tk is not None else "⏳ Belum Upload",
+        "TK BPJS TK": int(r_tk["Jumlah TK"]) if r_tk is not None else 0,
+        "Tagihan BPJS TK": format_rp(r_tk["Total tagihan"]) if r_tk is not None else "Rp. 0",
+    })
+
+# 4 METRIK SLA RINGKAS DI ATAS TABEL MONITORING SLA
+st.markdown(
+    f"""
+    <h3 style="text-align: center; color: #0A2540; font-weight: 800; margin-top: 6px; margin-bottom: 18px;">
+        📋 Monitoring & Kepatuhan SLA Cabang ({sel_bulan_label} {sel_tahun})
+    </h3>
+    """,
+    unsafe_allow_html=True
+)
+
+def hitung_skor_sla_rata(df_parsed, target_tgl, min_pct):
+    if df_parsed.empty:
+        return None
+    skor_map = {
+        0: 100.0, 1: 98.0, 2: 96.0, 3: 94.0, 4: 92.0, 5: 90.0,
+        -1: 102.0, -2: 104.0, -3: 106.0, -4: 108.0, -5: 110.0, -6: 115.0
+    }
+    if target_tgl == 2:  # BPJS Kesehatan
+        skor_map.update({3: 93.0, 4: 90.0, 5: 85.0})
+    list_skor = []
+    for tgl_up in df_parsed["Tanggal_Upload"]:
+        selisih = int(tgl_up) - target_tgl
+        if selisih > 5:
+            list_skor.append(min_pct)
+        elif selisih < -6:
+            list_skor.append(115.0)
+        else:
+            list_skor.append(skor_map.get(selisih, 100.0))
+    return sum(list_skor) / len(list_skor)
+
+ontime_ks_cnt = len(df_ks_filtered[df_ks_filtered["Tanggal_Upload"] <= 2]) if not df_ks_filtered.empty else 0
+late_ks_cnt = len(df_ks_filtered[df_ks_filtered["Tanggal_Upload"] > 2]) if not df_ks_filtered.empty else 0
+avg_sla_ks = hitung_skor_sla_rata(df_ks_filtered, target_tgl=2, min_pct=75.0)
+
+ontime_tk_cnt = len(df_tk_filtered[df_tk_filtered["Tanggal_Upload"] <= 16]) if not df_tk_filtered.empty else 0
+late_tk_cnt = len(df_tk_filtered[df_tk_filtered["Tanggal_Upload"] > 16]) if not df_tk_filtered.empty else 0
+avg_sla_tk = hitung_skor_sla_rata(df_tk_filtered, target_tgl=16, min_pct=88.0)
+
+s1, s2, s3, s4 = st.columns(4)
+with s1:
+    st.metric(label="🟢 Cabang On-Time (Kes)", value=f"{ontime_ks_cnt} Cabang", delta=f"Late: {late_ks_cnt} Cabang", delta_color="off")
+with s2:
+    st.metric(label="⭐ Rata-rata SLA Kesehatan", value=f"{avg_sla_ks:.2f}%" if avg_sla_ks is not None else "-", delta="Limit Tgl 2", delta_color="normal")
+with s3:
+    st.metric(label="🟢 Cabang On-Time (TK)", value=f"{ontime_tk_cnt} Cabang", delta=f"Late: {late_tk_cnt} Cabang", delta_color="off")
+with s4:
+    st.metric(label="⭐ Rata-rata SLA BPJS TK", value=f"{avg_sla_tk:.2f}%" if avg_sla_tk is not None else "-", delta="Limit Tgl 16", delta_color="normal")
+
+st.markdown("<br>", unsafe_allow_html=True)
+
+df_tabel_utama = pd.DataFrame(rekap_rows)
+st.dataframe(df_tabel_utama, use_container_width=True, hide_index=True)
+
 excel_sla_bytes = generate_excel_sla_tahunan(raw_df_ks, raw_df_tk, sel_tahun)
 st.download_button(
-    label=f"📥 Download Rekap SLA Tahunan Lengkap ({sel_tahun}) - Format Excel (.xlsx)",
+    label=f"📥 Download Rekap SLA Tahunan ({sel_tahun}) - Format Excel (.xlsx)",
     data=excel_sla_bytes,
     file_name=f"persentase_penilaian_cabang_{sel_tahun}.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

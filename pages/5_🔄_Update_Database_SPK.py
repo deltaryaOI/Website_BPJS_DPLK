@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import json
 import os
+import base64
+import requests
 
 # Set Page Config
 st.set_page_config(
@@ -10,26 +12,105 @@ st.set_page_config(
     layout="wide"
 )
 
-# Custom Styling (Mengikuti tema utama)
+# Custom Styling (Menyatu dengan tema gradasi sidebar biru & aksen oranye)
 st.markdown("""
     <style>
+        .stApp {
+            background-color: #F4F6F9;
+        }
         [data-testid="stSidebar"] {
-            background-color: #F0F4F9 !important;
-            border-right: 3px solid #FF7A00 !important;
+            background: linear-gradient(180deg, #0077B6 0%, #023E8A 45%, #0A2540 100%) !important;
+        }
+        [data-testid="stSidebar"] label,
+        [data-testid="stSidebar"] p,
+        [data-testid="stSidebar"] span,
+        [data-testid="stSidebar"] h1,
+        [data-testid="stSidebar"] h2,
+        [data-testid="stSidebar"] h3 {
+            color: #FFFFFF !important;
+        }
+        [data-testid="stSidebarNav"] a {
+            border-radius: 8px;
+            margin: 4px 8px;
+            padding: 8px 12px;
+        }
+        [data-testid="stSidebarNav"] a:hover {
+            background-color: rgba(255, 255, 255, 0.15) !important;
+        }
+        [data-testid="stSidebarNav"] a[aria-current="page"] {
+            background-color: #FF7A00 !important;
+            font-weight: 700 !important;
+        }
+        [data-testid="stSidebarHeader"] {
+            padding: 16px 16px 10px 16px !important;
+        }
+        [data-testid="stLogo"] {
+            height: auto !important;
+            max-height: none !important;
+            width: 210px !important;
+        }
+        [data-testid="stSidebarHeader"] img {
+            background-color: #FFFFFF;
+            padding: 10px 18px;
+            border-radius: 12px;
+            height: 72px !important;
+            width: 200px !important;
+            max-width: none !important;
+            object-fit: contain;
+            box-shadow: 0 3px 8px rgba(0, 0, 0, 0.18);
         }
         h1, h2, h3 { color: #0A2540 !important; font-weight: 700 !important; }
     </style>
 """, unsafe_allow_html=True)
+
+# ==============================================================================
+# FUNGSI AUTO-PUSH KE GITHUB (HARUS DI ATAS TOMBOL SYNC)
+# ==============================================================================
+def push_database_spk_to_github(json_content_str, commit_msg="Auto-update database_kontrak.json via Web App"):
+    """Otomatis memperbarui file database_kontrak.json di repository GitHub via REST API."""
+    if "GITHUB_TOKEN" not in st.secrets or "GITHUB_REPO" not in st.secrets:
+        return False, "Token GitHub belum diatur di secrets.toml (hanya tersimpan lokal)."
+
+    token = st.secrets["GITHUB_TOKEN"]
+    repo = st.secrets["GITHUB_REPO"]
+    file_path = "database_kontrak.json"
+    api_url = f"https://api.github.com/repos/{repo}/contents/{file_path}"
+
+    headers = {
+        "Authorization": f"token {token}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+
+    try:
+        res_get = requests.get(api_url, headers=headers, timeout=15)
+        sha_val = res_get.json().get("sha") if res_get.status_code == 200 else None
+
+        encoded_content = base64.b64encode(json_content_str.encode("utf-8")).decode("utf-8")
+        payload = {
+            "message": commit_msg,
+            "content": encoded_content,
+            "branch": "main"
+        }
+        if sha_val:
+            payload["sha"] = sha_val
+
+        res_put = requests.put(api_url, headers=headers, json=payload, timeout=15)
+        if res_put.status_code in [200, 201]:
+            return True, "Berhasil tersinkronisasi permanen ke GitHub!"
+        else:
+            return False, f"Gagal push ke GitHub ({res_put.status_code}): {res_put.json().get('message', '')}"
+    except Exception as e:
+        return False, f"Error koneksi GitHub: {e}"
 
 # Deteksi lokasi file database_kontrak.json
 possible_paths = ["database_kontrak.json", "database.json", os.path.join("..", "database_kontrak.json")]
 json_target_path = next((p for p in possible_paths if os.path.exists(p)), "database_kontrak.json")
 
 st.title("🔃 Update & Manajemen Database SPK")
-st.caption("Sinkronisasi otomatis daftar Nomor Kontrak (SPK) seluruh cabang dari file Excel ke `database_kontrak.json`.")
+st.caption("Sinkronisasi otomatis daftar Nomor Kontrak (SPK) seluruh cabang dari file Excel ke `database_kontrak.json` & GitHub.")
 
 # ==============================================================================
-# 1. UPLOAD & SINKRONISASI EXCEL KE JSON
+# 1. UPLOAD & SINKRONISASI EXCEL KE JSON + AUTO-PUSH GITHUB
 # ==============================================================================
 st.subheader("📤 Sinkronisasi via Excel SPK Terbaru")
 st.info("💡 **Logika Sinkronisasi:** SPK baru di Excel akan ditambahkan, SPK yang sama tetap dipertahankan (tanpa duplikat), dan SPK lama yang sudah tidak ada di Excel akan otomatis dihapus.")
@@ -83,7 +164,6 @@ if uploaded_spk_excel is not None:
                     added_cabang = 0
                     removed_cabang = 0
 
-                    # 1. Pertahankan SPK lama yang masih ada di Excel
                     for old_spk in old_list:
                         if old_spk in excel_list and old_spk not in kept_list:
                             kept_list.append(old_spk)
@@ -91,7 +171,6 @@ if uploaded_spk_excel is not None:
                             total_removed += 1
                             removed_cabang += 1
 
-                    # 2. Tambahkan SPK baru dari Excel
                     for new_spk in excel_list:
                         if new_spk not in kept_list:
                             kept_list.append(new_spk)
@@ -102,13 +181,20 @@ if uploaded_spk_excel is not None:
                     if added_cabang > 0 or removed_cabang > 0:
                         detail_log.append(f"- **{json_key}**: `+{added_cabang}` SPK baru, `-{removed_cabang}` SPK dihapus")
 
+            # Simpan lokal ke database_kontrak.json
+            json_str = json.dumps(current_db, indent=2, ensure_ascii=False)
             with open(json_target_path, "w", encoding="utf-8") as f:
-                json.dump(current_db, f, indent=2, ensure_ascii=False)
+                f.write(json_str)
+
+            # Otomatis push ke GitHub agar permanen di Streamlit Cloud
+            ok_gh, msg_gh = push_database_spk_to_github(json_str)
 
             st.session_state["spk_sync_msg_page"] = {
                 "added": total_added,
                 "removed": total_removed,
-                "details": detail_log
+                "details": detail_log,
+                "gh_ok": ok_gh,
+                "gh_msg": msg_gh
             }
 
             st.cache_data.clear()
@@ -121,6 +207,11 @@ if uploaded_spk_excel is not None:
 if "spk_sync_msg_page" in st.session_state:
     msg = st.session_state["spk_sync_msg_page"]
     st.success(f"✅ **Sinkronisasi Berhasil!** (+{msg['added']} SPK baru ditambahkan | -{msg['removed']} SPK lama dihapus)")
+    if msg.get("gh_ok"):
+        st.success(f"☁️ **GitHub Cloud Sync:** {msg.get('gh_msg')}")
+    else:
+        st.warning(f"⚠️ **GitHub Cloud Sync:** {msg.get('gh_msg')}")
+
     if msg["details"]:
         st.markdown("\n".join(msg["details"]))
     else:
