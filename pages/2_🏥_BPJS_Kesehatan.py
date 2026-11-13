@@ -124,23 +124,24 @@ def sync_to_google_sheet_kesehatan(df_edited, nama_tab_sheet, cabang_nama, is_ic
         
         if is_icon:
             sheet_url = st.secrets["SPREADSHEET_URL_KES_ICON"]
-            col_key_search = 8   # Kolom H: VIRTUAL ACCAOUNT BANK MANDIRI
+            col_key_search = 8   # Kolom H: VIRTUAL ACCOUNT BANK MANDIRI
             col_spk = 4          # Kolom D: NO KONTRAK
-            col_tk = 9          # Sesuaikan nomor kolom Jumlah TK di sheet ICON
-            col_iuran = 11       # Sesuaikan nomor kolom Total Tagihan di sheet ICON
+            col_tk = 11           # Kolom K: Jumlah TK
+            col_iuran = 13       # Kolom M: Total Tagihan
         else:
             sheet_url = st.secrets["SPREADSHEET_URL_KES"]
             col_key_search = 8   # Kolom H: Nomor VA di sheet HPI
             col_spk = 4          # Kolom D: Nomor Kontrak
-            col_tk = 9          # Kolom I: Jumlah TK
+            col_tk = 9           # Kolom I: Jumlah TK
             col_iuran = 11       # Kolom K: Total Iuran
 
         sh = client.open_by_url(sheet_url)
         worksheet = sh.worksheet(nama_tab_sheet)
         
-        # Bersihkan spasi dan karakter non-digit agar pencocokan VA 100% akurat
+        # Ambil seluruh kolom VA dan kolom SPK sekaligus untuk mendukung 1 VA dengan banyak SPK
         raw_keys = worksheet.col_values(col_key_search)
         key_list = [re.sub(r'\D', '', str(x)) for x in raw_keys]
+        spk_list = [str(x).strip() for x in worksheet.col_values(col_spk)]
         
         let_spk = get_column_letter(col_spk)
         let_tk = get_column_letter(col_tk)
@@ -148,16 +149,35 @@ def sync_to_google_sheet_kesehatan(df_edited, nama_tab_sheet, cabang_nama, is_ic
 
         batch_data = []
         updated_count = 0
+        baris_terpakai = set()
         records = df_edited.to_dict(orient="records")
         
         for row in records:
             kode_pdf = re.sub(r'\D', '', str(row.get("Nomor VA", "")))
-            if kode_pdf and kode_pdf in key_list:
-                row_idx = key_list.index(kode_pdf) + 1
-                
+            spk_pdf = str(row["Nomor Kontrak"]).strip()
+            
+            kandidat_baris = [
+                idx + 1 for idx, val in enumerate(key_list)
+                if kode_pdf and val == kode_pdf and (idx + 1) not in baris_terpakai
+            ]
+            
+            row_idx = None
+            if kandidat_baris:
+                # Prioritas 1: Cocokkan VA sama DAN SPK di sheet sudah sama
+                for r in kandidat_baris:
+                    spk_sheet = spk_list[r - 1] if (r - 1) < len(spk_list) else ""
+                    if spk_sheet.lower() == spk_pdf.lower():
+                        row_idx = r
+                        break
+                # Prioritas 2: Ambil baris kandidat berikutnya yang belum terpakai
+                if row_idx is None:
+                    row_idx = kandidat_baris[0]
+
+            if row_idx is not None:
+                baris_terpakai.add(row_idx)
                 batch_data.append({
                     "range": f"{let_spk}{row_idx}",
-                    "values": [[str(row["Nomor Kontrak"])]]
+                    "values": [[spk_pdf]]
                 })
                 batch_data.append({
                     "range": f"{let_tk}{row_idx}",
@@ -200,7 +220,6 @@ def sync_to_google_sheet_kesehatan(df_edited, nama_tab_sheet, cabang_nama, is_ic
         return True, updated_count
     except Exception as e:
         return False, str(e)
-
 # ==============================================================================
 # DATABASE KONTRAK & SIDEBAR
 # ==============================================================================
