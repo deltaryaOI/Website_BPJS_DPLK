@@ -331,7 +331,10 @@ def sync_to_google_sheet(df_edited, nama_tab_sheet, cabang_nama, is_icon=False):
             
         sh = client.open_by_url(sheet_url)
         worksheet = sh.worksheet(nama_tab_sheet)
-        npp_list = worksheet.col_values(col_npp_search)
+        
+        # Ambil seluruh kolom NPP dan kolom SPK sekaligus untuk mendukung 1 NPP dengan banyak SPK
+        npp_list = [str(x).strip() for x in worksheet.col_values(col_npp_search)]
+        spk_list = [str(x).strip() for x in worksheet.col_values(col_spk)]
         
         let_spk = get_column_letter(col_spk)
         let_tk = get_column_letter(col_tk)
@@ -342,15 +345,36 @@ def sync_to_google_sheet(df_edited, nama_tab_sheet, cabang_nama, is_icon=False):
 
         batch_data = []
         updated_count = 0
+        baris_terpakai = set()  # Mencegah baris yang sama tertimpa dua kali dalam 1 kali sync
         records = df_edited.to_dict(orient="records")
         
         for row in records:
             npp_pdf = str(row["NPP"]).strip()
-            if npp_pdf in npp_list:
-                row_idx = npp_list.index(npp_pdf) + 1
+            spk_pdf = str(row["Nomor Kontrak"]).strip()
+            
+            # Cari semua nomor baris di sheet yang memiliki NPP yang sama dan belum terpakai
+            kandidat_baris = [
+                idx + 1 for idx, val in enumerate(npp_list)
+                if val == npp_pdf and (idx + 1) not in baris_terpakai
+            ]
+            
+            row_idx = None
+            if kandidat_baris:
+                # Prioritas 1: Cari baris dengan NPP sama DAN SPK di sheet sudah sama
+                for r in kandidat_baris:
+                    spk_sheet = spk_list[r - 1] if (r - 1) < len(spk_list) else ""
+                    if spk_sheet.lower() == spk_pdf.lower():
+                        row_idx = r
+                        break
+                # Prioritas 2: Jika SPK di sheet masih kosong/berbeda, ambil baris kandidat pertama yang belum terpakai
+                if row_idx is None:
+                    row_idx = kandidat_baris[0]
+
+            if row_idx is not None:
+                baris_terpakai.add(row_idx)
                 batch_data.append({
                     "range": f"{let_spk}{row_idx}",
-                    "values": [[str(row["Nomor Kontrak"])]]
+                    "values": [[spk_pdf]]
                 })
                 batch_data.append({
                     "range": f"{let_tk}{row_idx}",
