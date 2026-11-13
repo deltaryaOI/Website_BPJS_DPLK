@@ -72,10 +72,7 @@ pg = st.navigation({
 # 3. CUSTOM CSS PRESISI (GARIS ORANYE MUNCUL KEMBALI)
 # ==============================================================================
 # Logo HPI tunggal di puncak paling atas sidebar (berlaku untuk semua menu)
-def render_sidebar_logo():
-    if os.path.exists("logo.png"):
-        with open("logo.png", "rb") as img_f:
-            b64_logo = ""
+b64_logo = ""
 if os.path.exists("logo.png"):
     with open("logo.png", "rb") as img_f:
         b64_logo = base64.b64encode(img_f.read()).decode()
@@ -107,8 +104,6 @@ st.markdown(f"""
         color: #0A2540 !important;
     }}
 
-    /* LOGO HPI TUNGGAL DI PALING ATAS MENU NAVIGASI */
-    /* LOGO HPI TRANSPARAN LANGSUNG DI ATAS MENU NAVIGASI */
     /* LOGO HPI TRANSPARAN LANGSUNG DI ATAS MENU NAVIGASI */
     [data-testid="stSidebarNav"]::before {{
         content: "";
@@ -121,7 +116,7 @@ st.markdown(f"""
         height: 80px;
         margin: 8px 16px 14px 16px;
         padding-bottom: 14px;
-        border-bottom: 3px solid #FFFFFF;
+        border-bottom: 4px solid #FFFFFF;
     }}
 
     /* 2. GARIS PUTIH TEBAL DI BAWAH MENU PALING BAWAH (UPDATE DATABASE SPK) */
