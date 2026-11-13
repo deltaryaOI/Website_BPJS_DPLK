@@ -525,7 +525,7 @@ wib_now = datetime.datetime.utcnow() + datetime.timedelta(hours=7)
 st.markdown(f"""
 <div class="top-header-box">
     <div>
-        <div style="font-size:19px; font-weight:800; color:#0A2540;">📊 Executive Monitoring & SLA Control Tower</div>
+        <div style="font-size:19px; font-weight:800; color:#0A2540;">📊 Dashboard Monitoring & SLA Cabang</div>
         <div style="font-size:12.5px; color:#64748B;">PT Haleyora Powerindo • Sinkronisasi Real-Time BPJS Kesehatan, Ketenagakerjaan & DPLK</div>
     </div>
     <div class="date-pill">
