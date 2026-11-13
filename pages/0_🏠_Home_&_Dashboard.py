@@ -69,7 +69,30 @@ def fetch_monitoring_data():
 def clean_numeric(val):
     if pd.isna(val) or val == "":
         return 0.0
-    s = re.sub(r'[^\d.-]', '', str(val).replace(',', ''))
+    if isinstance(val, int):
+        return float(val)
+    
+    # Ubah float maupun string ke teks dulu agar format 1.203 (ribuan) ikut terdeteksi
+    s = str(val).strip()
+    s = re.sub(r'[^\d.,-]', '', s)
+    if not s:
+        return 0.0
+
+    if "." in s and "," in s:
+        if s.rfind(".") < s.rfind(","):
+            s = s.replace(".", "").replace(",", ".")
+        else:
+            s = s.replace(",", "")
+    elif "." in s:
+        parts = s.split(".")
+        if len(parts) > 2 or (len(parts) == 2 and len(parts[1]) == 3):
+            s = s.replace(".", "")
+    elif "," in s:
+        parts = s.split(",")
+        if len(parts) > 2 or (len(parts) == 2 and len(parts[1]) == 3):
+            s = s.replace(",", "")
+        else:
+            s = s.replace(",", ".")
     try:
         return float(s)
     except ValueError:
