@@ -9,9 +9,10 @@ import base64
 # 1. KONFIGURASI HALAMAN (HARUS PALING PERTAMA)
 # ==============================================================================
 st.set_page_config(
-    page_title="Dashboard Portal & SLA Monitoring BPJS",
-    page_icon="🏠",
-    layout="wide"
+    page_title="SDM HPI Control Tower",
+    page_icon="logo.png" if os.path.exists("logo.png") else "📊",
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
 # ==============================================================================
