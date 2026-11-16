@@ -199,7 +199,7 @@ def format_rp(val):
 # ==============================================================================
 # DATA FETCHING DARI GOOGLE SHEETS
 # ==============================================================================
-@st.cache_data(ttl=60, show_spinner="⏳ Memuat data terbaru dari Google Sheets...")
+@st.cache_data(ttl=60, max_entries=3, show_spinner="⏳ Memuat data terbaru dari Google Sheets...")
 def fetch_monitoring_data():
     try:
         scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]

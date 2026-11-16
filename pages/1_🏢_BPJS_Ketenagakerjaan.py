@@ -6,6 +6,7 @@ import base64
 import mimetypes
 import json
 import os
+import gc
 import re
 import io
 import docx
@@ -419,7 +420,7 @@ def sync_to_google_sheet(df_edited, nama_tab_sheet, cabang_nama, is_icon=False):
 # ==============================================================================
 # DATABASE KONTRAK & SIDEBAR
 # ==============================================================================
-@st.cache_data
+@st.cache_data(ttl=300, max_entries=3)
 def load_database():
     possible_paths = [
         "database_kontrak.json",
@@ -521,6 +522,8 @@ if uploaded_files_tk:
             key=f"editor_combine_{selected_wilayah}_{len(uploaded_files_tk)}"
         )
 
+        gc.collect()  # Langsung bersihkan sisa memori file PDF dari RAM
+    
         edited_df.reset_index(drop=True, inplace=True)
         edited_df["NO"] = [idx + 1 for idx in range(len(edited_df))]
 
@@ -737,15 +740,17 @@ if uploaded_files_tk:
             key="target_sheet_choice_tk"
         )
 
-        try:
+        @st.cache_data(ttl=300, max_entries=4)
+        def get_sheet_tabs_tk(url):
             scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
             creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
             client = gspread.authorize(creds)
-            
+            sh = client.open_by_url(url)
+            return [ws.title for ws in sh.worksheets()]
+
+        try:
             sheet_url = st.secrets.get("SPREADSHEET_URL_ICON") if target_sheet_choice == "Sheet Rekap Cabang ICON" else st.secrets["SPREADSHEET_URL"]
-            sh = client.open_by_url(sheet_url)
-            
-            available_tabs = [ws.title for ws in sh.worksheets()]
+            available_tabs = get_sheet_tabs_tk(sheet_url)
             
             tab_sheet_target_tk = st.selectbox(
                 "Pilih Tab Google Sheet Target:", 
