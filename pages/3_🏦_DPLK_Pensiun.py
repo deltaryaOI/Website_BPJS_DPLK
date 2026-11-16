@@ -10,33 +10,9 @@ st.set_page_config(
 )
 
 # 2. Custom Styling Tema Utama (Sesuai palette Biru Navy & Oranye)
-st.markdown("""
-    <style>
-        [data-testid="stSidebar"] {
-            background-color: #F0F4F9 !important;
-            border-right: 3px solid #FF7A00 !important;
-        }
-        h1, h2, h3 { color: #0A2540 !important; font-weight: 700 !important; }
-        
-        .dev-card {
-            background-color: #FFF8F0;
-            border-left: 5px solid #FF7A00;
-            padding: 20px;
-            border-radius: 10px;
-            margin-bottom: 25px;
-        }
-        .dev-badge {
-            background-color: #FF7A00;
-            color: white;
-            padding: 4px 12px;
-            border-radius: 15px;
-            font-size: 0.85rem;
-            font-weight: bold;
-            display: inline-block;
-            margin-bottom: 10px;
-        }
-    </style>
-""", unsafe_allow_html=True)
+from ui_theme import apply_glass_theme
+
+apply_glass_theme()
 
 # 3. Sidebar Setup
 @st.cache_data

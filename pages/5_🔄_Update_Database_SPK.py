@@ -13,55 +13,9 @@ st.set_page_config(
 )
 
 # Custom Styling (Menyatu dengan tema gradasi sidebar biru & aksen oranye)
-st.markdown("""
-    <style>
-        .stApp {
-            background-color: #F4F6F9;
-        }
-        [data-testid="stSidebar"] {
-            background: linear-gradient(180deg, #0077B6 0%, #023E8A 45%, #0A2540 100%) !important;
-        }
-        [data-testid="stSidebar"] label,
-        [data-testid="stSidebar"] p,
-        [data-testid="stSidebar"] span,
-        [data-testid="stSidebar"] h1,
-        [data-testid="stSidebar"] h2,
-        [data-testid="stSidebar"] h3 {
-            color: #FFFFFF !important;
-        }
-        [data-testid="stSidebarNav"] a {
-            border-radius: 8px;
-            margin: 4px 8px;
-            padding: 8px 12px;
-        }
-        [data-testid="stSidebarNav"] a:hover {
-            background-color: rgba(255, 255, 255, 0.15) !important;
-        }
-        [data-testid="stSidebarNav"] a[aria-current="page"] {
-            background-color: #FF7A00 !important;
-            font-weight: 700 !important;
-        }
-        [data-testid="stSidebarHeader"] {
-            padding: 16px 16px 10px 16px !important;
-        }
-        [data-testid="stLogo"] {
-            height: auto !important;
-            max-height: none !important;
-            width: 210px !important;
-        }
-        [data-testid="stSidebarHeader"] img {
-            background-color: #FFFFFF;
-            padding: 10px 18px;
-            border-radius: 12px;
-            height: 72px !important;
-            width: 200px !important;
-            max-width: none !important;
-            object-fit: contain;
-            box-shadow: 0 3px 8px rgba(0, 0, 0, 0.18);
-        }
-        h1, h2, h3 { color: #0A2540 !important; font-weight: 700 !important; }
-    </style>
-""", unsafe_allow_html=True)
+from ui_theme import apply_glass_theme
+
+apply_glass_theme()
 
 # ==============================================================================
 # FUNGSI AUTO-PUSH KE GITHUB (HARUS DI ATAS TOMBOL SYNC)

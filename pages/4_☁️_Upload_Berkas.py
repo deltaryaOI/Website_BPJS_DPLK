@@ -13,12 +13,9 @@ st.set_page_config(
 )
 
 # Custom Styling Body
-st.markdown("""
-    <style>
-        h1, h2, h3 { color: #0A2540 !important; font-weight: 700 !important; }
-        hr { border-top: 2px solid #FF7A00 !important; margin: 1rem 0 !important; }
-    </style>
-""", unsafe_allow_html=True)
+from ui_theme import apply_glass_theme
+
+apply_glass_theme()
 
 @st.cache_data
 def load_database():

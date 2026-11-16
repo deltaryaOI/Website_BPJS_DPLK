@@ -21,143 +21,9 @@ st.set_page_config(
 # ==============================================================================
 # CUSTOM CSS: GRADASI SIDEBAR BIRU MUDA -> BIRU TUA, PUTIH & ORANYE AKSEN
 # ==============================================================================
-st.markdown("""
-<style>
-    .stApp {
-        background-color: #F4F6F9;
-    }
-    .block-container {
-        padding-top: 1.3rem;
-        padding-bottom: 2rem;
-        max-width: 96%;
-    }
+from ui_theme import apply_glass_theme, show_center_loader
 
-    /* Sidebar Gradasi Biru Muda ke Biru Tua */
-    [data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #0077B6 0%, #023E8A 45%, #0A2540 100%) !important;
-    }
-    [data-testid="stSidebar"] * {
-        color: #FFFFFF !important;
-    }
-    [data-testid="stSidebarNav"] a {
-        border-radius: 8px;
-        margin: 4px 8px;
-        padding: 8px 12px;
-        transition: all 0.2s ease;
-    }
-    [data-testid="stSidebarNav"] a:hover {
-        background-color: rgba(255, 255, 255, 0.15) !important;
-    }
-    [data-testid="stSidebarNav"] a[aria-current="page"] {
-        background-color: #FF7A00 !important;
-        color: #FFFFFF !important;
-        font-weight: 700 !important;
-    }
-
-    /* Pastikan Selectbox & Input Terlihat Jelas */
-    div[data-baseweb="select"] > div {
-        background-color: #FFFFFF !important;
-        color: #0A2540 !important;
-        border: 1px solid #CBD5E1 !important;
-        border-radius: 8px !important;
-    }
-    div[data-baseweb="select"] span {
-        color: #0A2540 !important;
-        font-weight: 600 !important;
-    }
-
-    /* Top Header Bar */
-    .top-header-box {
-        background-color: #FFFFFF;
-        padding: 14px 22px;
-        border-radius: 12px;
-        box-shadow: 0 2px 8px rgba(10, 37, 64, 0.06);
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 16px;
-        border-left: 5px solid #FF7A00;
-    }
-    .date-pill {
-        background-color: #0A2540;
-        color: #FFFFFF;
-        padding: 7px 16px;
-        border-radius: 20px;
-        font-size: 13px;
-        font-weight: 600;
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-    }
-
-    /* 3 Kartu KPI Utama */
-    .kpi-card {
-        background-color: #FFFFFF;
-        border-radius: 14px;
-        padding: 20px 22px;
-        box-shadow: 0 2px 10px rgba(10, 37, 64, 0.05);
-        border: 1px solid #E6ECF2;
-        display: flex;
-        align-items: center;
-        gap: 18px;
-        height: 100%;
-    }
-    .kpi-icon-navy {
-        background-color: #0A2540;
-        color: #FFFFFF;
-        width: 54px;
-        height: 54px;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 23px;
-        flex-shrink: 0;
-    }
-    .kpi-icon-orange {
-        background-color: #FF7A00;
-        color: #FFFFFF;
-        width: 54px;
-        height: 54px;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 23px;
-        flex-shrink: 0;
-    }
-    .kpi-icon-blue {
-        background-color: #0077B6;
-        color: #FFFFFF;
-        width: 54px;
-        height: 54px;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 23px;
-        flex-shrink: 0;
-    }
-    .kpi-title {
-        font-size: 13px;
-        color: #5A6B7C;
-        font-weight: 600;
-        margin-bottom: 3px;
-    }
-    .kpi-value {
-        font-size: 22px;
-        color: #0A2540;
-        font-weight: 800;
-        line-height: 1.2;
-    }
-    .kpi-sub {
-        font-size: 12px;
-        color: #16A34A;
-        font-weight: 600;
-        margin-top: 4px;
-    }
-</style>
-""", unsafe_allow_html=True)
+apply_glass_theme()
 
 # ==============================================================================
 # HELPER FUNCTIONS: PARSING ANGKA INDONESIA & FORMAT RUPIAH
@@ -199,7 +65,7 @@ def format_rp(val):
 # ==============================================================================
 # DATA FETCHING DARI GOOGLE SHEETS
 # ==============================================================================
-@st.cache_data(ttl=60, max_entries=3, show_spinner="⏳ Memuat data terbaru dari Google Sheets...")
+@st.cache_data(ttl=300, max_entries=3, show_spinner=False)
 def fetch_monitoring_data():
     try:
         scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
@@ -271,6 +137,7 @@ def parse_monitoring_df(df_raw, tahun, bulan_angka, limit_tgl):
 # ==============================================================================
 # GENERATOR EXCEL SLA TAHUNAN (IDENTIK PERSENTASE_PENILAIAN_CABANG.XLSX)
 # ==============================================================================
+@st.cache_data(ttl=300, max_entries=2, show_spinner=False)
 def generate_excel_sla_tahunan(raw_df_ks, raw_df_tk, tahun_target):
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
@@ -519,7 +386,10 @@ def generate_excel_sla_tahunan(raw_df_ks, raw_df_tk, tahun_target):
 # ==============================================================================
 # LOAD DATA & TOP HEADER BAR (HANYA TANGGAL SAJA)
 # ==============================================================================
+loader_placeholder = st.empty()
 raw_df_ks, raw_df_tk = fetch_monitoring_data()
+loader_placeholder.empty()
+
 wib_now = datetime.datetime.utcnow() + datetime.timedelta(hours=7)
 
 st.markdown(f"""
@@ -757,15 +627,42 @@ avg_sla_tk = hitung_skor_sla_rata(df_tk_filtered, target_tgl=16, min_pct=88.0)
 
 s1, s2, s3, s4 = st.columns(4)
 with s1:
-    st.metric(label="🟢 Cabang On-Time (Kes)", value=f"{ontime_ks_cnt} Cabang", delta=f"Late: {late_ks_cnt} Cabang", delta_color="off")
-with s2:
-    st.metric(label="⭐ Rata-rata SLA Kesehatan", value=f"{avg_sla_ks:.2f}%" if avg_sla_ks is not None else "-", delta="Limit Tgl 2", delta_color="normal")
-with s3:
-    st.metric(label="🟢 Cabang On-Time (TK)", value=f"{ontime_tk_cnt} Cabang", delta=f"Late: {late_tk_cnt} Cabang", delta_color="off")
-with s4:
-    st.metric(label="⭐ Rata-rata SLA BPJS TK", value=f"{avg_sla_tk:.2f}%" if avg_sla_tk is not None else "-", delta="Limit Tgl 16", delta_color="normal")
+    st.markdown(f"""
+    <div class="sla-glass-card">
+        <div class="sla-label">🟢 Cabang On-Time (Kes)</div>
+        <div class="sla-val">{ontime_ks_cnt} Cabang</div>
+        <span class="sla-badge">Late: {late_ks_cnt} Cabang</span>
+    </div>
+    """, unsafe_allow_html=True)
 
-st.markdown("<br>", unsafe_allow_html=True)
+with s2:
+    val_sla_ks = f"{avg_sla_ks:.2f}%" if avg_sla_ks is not None else "-"
+    st.markdown(f"""
+    <div class="sla-glass-card">
+        <div class="sla-label">⭐ Rata-rata SLA Kesehatan</div>
+        <div class="sla-val">{val_sla_ks}</div>
+        <span class="sla-badge">Limit Tgl 2</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+with s3:
+    st.markdown(f"""
+    <div class="sla-glass-card orange-accent">
+        <div class="sla-label">🟢 Cabang On-Time (TK)</div>
+        <div class="sla-val">{ontime_tk_cnt} Cabang</div>
+        <span class="sla-badge">Late: {late_tk_cnt} Cabang</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+with s4:
+    val_sla_tk = f"{avg_sla_tk:.2f}%" if avg_sla_tk is not None else "-"
+    st.markdown(f"""
+    <div class="sla-glass-card orange-accent">
+        <div class="sla-label">⭐ Rata-rata SLA BPJS TK</div>
+        <div class="sla-val">{val_sla_tk}</div>
+        <span class="sla-badge">Limit Tgl 16</span>
+    </div>
+    """, unsafe_allow_html=True)
 
 df_tabel_utama = pd.DataFrame(rekap_rows)
 st.dataframe(df_tabel_utama, use_container_width=True, hide_index=True)

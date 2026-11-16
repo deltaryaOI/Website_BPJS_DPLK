@@ -31,15 +31,9 @@ st.set_page_config(
 )
 
 # Custom Styling (Mengikuti tema utama)
-st.markdown("""
-    <style>
-        [data-testid="stSidebar"] {
-            background-color: #F0F4F9 !important;
-            border-right: 3px solid #FF7A00 !important;
-        }
-        h1, h2, h3 { color: #0A2540 !important; font-weight: 700 !important; }
-    </style>
-""", unsafe_allow_html=True)
+from ui_theme import apply_glass_theme
+
+apply_glass_theme()
 
 # Format Tanggal Bahasa Indonesia
 NAMA_BULAN = [
