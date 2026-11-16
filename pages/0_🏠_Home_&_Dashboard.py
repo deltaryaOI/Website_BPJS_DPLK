@@ -431,7 +431,7 @@ with col_f3:
 
 with col_f4:
     st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
-    if st.button("🔄 Refresh Data", use_container_width=True, type="primary"):
+    if st.button("♻️ Refresh Data", use_container_width=True, type="primary"):
         st.cache_data.clear()
         st.rerun()
 
