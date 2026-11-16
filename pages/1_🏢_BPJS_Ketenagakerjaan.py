@@ -54,17 +54,13 @@ def safe_int(val):
     except (ValueError, TypeError):
         return 0
 
-def custom_round(val):
+def safe_float(val):
     try:
-        val_float = float(val)
-        integer_part = int(val_float)
-        decimal_part = val_float - integer_part
-        if decimal_part > 0.50:
-            return integer_part + 1
-        else:
-            return integer_part
+        if pd.isna(val) or val is None or str(val).strip() == "" or str(val).strip().lower() == "none":
+            return 0.0
+        return float(val)
     except (ValueError, TypeError):
-        return 0
+        return 0.0
 
 def extract_periode(tanggal_str):
     if not tanggal_str:
@@ -134,11 +130,8 @@ def lengkapi_npp_dan_kode_iuran(data_tk):
     npp = str(data_tk.get("NPP", "-")).strip()
     kode = str(data_tk.get("Kode Iuran", "-")).strip()
 
-    # Jika NPP ada tapi Kode Iuran kosong -> Kode Iuran = 4 + NPP + 000
     if npp != "-" and npp.isdigit() and (kode == "-" or not kode):
         data_tk["Kode Iuran"] = f"4{npp}000"
-
-    # Jika Kode Iuran ada tapi NPP kosong -> ambil digit setelah '4' dan sebelum '000'
     elif kode != "-" and kode.isdigit() and (npp == "-" or not npp):
         if kode.startswith("4") and kode.endswith("000") and len(kode) > 4:
             data_tk["NPP"] = kode[1:-3]
@@ -148,7 +141,7 @@ def lengkapi_npp_dan_kode_iuran(data_tk):
     return data_tk
 
 def parse_f2a_pdf(pdf, default_spk):
-    """Membaca PDF Rincian Tenaga Kerja / Form F2A multi-halaman"""
+    """Membaca PDF Rincian Tenaga Kerja / Form F2A multi-halaman (Nilai Desimal Asli)"""
     data_tk = {
         "Nama Perusahaan": "-",
         "NPP": "-",
@@ -163,7 +156,6 @@ def parse_f2a_pdf(pdf, default_spk):
     }
 
     max_no_tk = 0
-    # 1. Ekstrak NPP & Nama Unit Kerja dari Halaman 1
     first_page_text = pdf.pages[0].extract_text() or ""
     lines = first_page_text.split('\n')
     for idx, line in enumerate(lines):
@@ -185,7 +177,6 @@ def parse_f2a_pdf(pdf, default_spk):
                     data_tk["Nama Perusahaan"] = sisa_teks
             break
 
-    # 2. Loop semua halaman untuk mencari nomor urut terakhir & baris "Jumlah Seluruhnya"
     for page in pdf.pages:
         tables = page.extract_tables()
         for table in tables:
@@ -209,9 +200,9 @@ def parse_f2a_pdf(pdf, default_spk):
                     if len(numeric_cells) >= 8:
                         jkk = numeric_cells[2]
                         jkm = numeric_cells[3]
-                        jht = numeric_cells[4] + numeric_cells[5]
-                        jpn = numeric_cells[6] + numeric_cells[7]
-                        total = numeric_cells[-1] if len(numeric_cells) >= 11 else (jkk + jkm + jht + jpn)
+                        jht = round(numeric_cells[4] + numeric_cells[5], 2)
+                        jpn = round(numeric_cells[6] + numeric_cells[7], 2)
+                        total = numeric_cells[-1] if len(numeric_cells) >= 11 else round(jkk + jkm + jht + jpn, 2)
 
                         data_tk["Total Iuran JKK"] = jkk
                         data_tk["Total Iuran JKM"] = jkm
@@ -223,7 +214,7 @@ def parse_f2a_pdf(pdf, default_spk):
     return lengkapi_npp_dan_kode_iuran(data_tk)
 
 def parse_npp_eps_pdf(pdf, default_spk):
-    """Membaca PDF Billing NPP / EPS"""
+    """Membaca PDF Billing NPP / EPS (Nilai Desimal Asli)"""
     raw_text = ""
     for page in pdf.pages:
         text = page.extract_text()
@@ -245,7 +236,6 @@ def parse_npp_eps_pdf(pdf, default_spk):
         "Total Pembayaran": 0.0
     }
 
-    # 1. Nama Perusahaan
     match_nama_sipp = re.search(r'Nama.?\s:\s*(.*?)\s(?:Total|Jumlah)\s*Tenaga', clean_text, re.IGNORECASE)
     match_nama_eps = re.search(r'PEMBAYARAN\s*UNTUK\s+(.*?)\s+NPP', clean_text, re.IGNORECASE)
     match_nama_eps_ringkas = re.search(r'Nama\s+Perusahaan\s*:\s*(.*?)(?:\s+Total\s+Tenaga|\s+Bulan|$)', clean_text, re.IGNORECASE)
@@ -258,22 +248,18 @@ def parse_npp_eps_pdf(pdf, default_spk):
     elif match_nama_eps_ringkas:
         data_tk["Nama Perusahaan"] = re.sub(r'\s+', ' ', match_nama_eps_ringkas.group(1).strip())
 
-    # 2. NPP
     match_npp = re.search(r'NPP\s*:\s*(\d+)', clean_text, re.IGNORECASE)
     if match_npp:
         data_tk["NPP"] = str(match_npp.group(1).strip())
 
-    # 3. Kode Iuran
     match_kode = re.search(r'(?:KODE\s*IURAN\s*:?|KODE\s*PEMBAYARAN)\s*([0-9\s]{10,20})', clean_text, re.IGNORECASE)
     if match_kode: 
         data_tk["Kode Iuran"] = match_kode.group(1).replace(' ', '').strip()
 
-    # 4. Jumlah Tenaga Kerja
     match_tk = re.search(r'(?:JUMLAH|Total)\s*TENAGA\s*KERJA\s*:\s*(\d+)', clean_text, re.IGNORECASE)
     if match_tk:
         data_tk["Jumlah Tenaga Kerja"] = int(match_tk.group(1).strip())
 
-    # 5. Rincian Iuran
     match_jkk = re.search(r'JKK.*?(?:Rp\.?|Rp)?\s*([\d,.]+)', clean_text, re.IGNORECASE)
     if match_jkk:
         data_tk["Total Iuran JKK"] = parse_amount(match_jkk.group(1))
@@ -290,16 +276,14 @@ def parse_npp_eps_pdf(pdf, default_spk):
     if match_jpn:
         data_tk["Total Iuran JPN"] = parse_amount(match_jpn.group(1))
 
-    # 6. Total Pembayaran
     match_total = re.search(r'(?:TOTAL\s*YANG\s*DIBAYARKAN|TOTAL\s*IURAN)\s*(?:\(\s*PEMBULATAN\s*\))?\s*:?\s*(?:Rp\.?|Rp)?\s*([\d,.]+)', clean_text, re.IGNORECASE)
     if match_total:
         data_tk["Total Pembayaran"] = parse_amount(match_total.group(1))
 
     return lengkapi_npp_dan_kode_iuran(data_tk)
 
-from openpyxl.utils import get_column_letter
-
 def sync_to_google_sheet(df_edited, nama_tab_sheet, cabang_nama, is_icon=False):
+    """Mengirim nilai desimal asli (tanpa pembulatan Python) agar rumus ROUND di Sheet yang bekerja"""
     try:
         scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
         creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
@@ -327,27 +311,23 @@ def sync_to_google_sheet(df_edited, nama_tab_sheet, cabang_nama, is_icon=False):
         sh = client.open_by_url(sheet_url)
         worksheet = sh.worksheet(nama_tab_sheet)
         
-        # Ambil seluruh kolom NPP dan kolom SPK sekaligus untuk mendukung 1 NPP dengan banyak SPK
         npp_list = [str(x).strip() for x in worksheet.col_values(col_npp_search)]
         spk_list = [str(x).strip() for x in worksheet.col_values(col_spk)]
         
         let_spk = get_column_letter(col_spk)
         let_tk = get_column_letter(col_tk)
         let_jkk = get_column_letter(col_jkk)
-        let_jht = get_column_letter(col_jht)
-        let_jkm = get_column_letter(col_jkm)
         let_jpn = get_column_letter(col_jpn)
 
         batch_data = []
         updated_count = 0
-        baris_terpakai = set()  # Mencegah baris yang sama tertimpa dua kali dalam 1 kali sync
+        baris_terpakai = set()
         records = df_edited.to_dict(orient="records")
         
         for row in records:
             npp_pdf = str(row["NPP"]).strip()
             spk_pdf = str(row["Nomor Kontrak"]).strip()
             
-            # Cari semua nomor baris di sheet yang memiliki NPP yang sama dan belum terpakai
             kandidat_baris = [
                 idx + 1 for idx, val in enumerate(npp_list)
                 if val == npp_pdf and (idx + 1) not in baris_terpakai
@@ -355,13 +335,11 @@ def sync_to_google_sheet(df_edited, nama_tab_sheet, cabang_nama, is_icon=False):
             
             row_idx = None
             if kandidat_baris:
-                # Prioritas 1: Cari baris dengan NPP sama DAN SPK di sheet sudah sama
                 for r in kandidat_baris:
                     spk_sheet = spk_list[r - 1] if (r - 1) < len(spk_list) else ""
                     if spk_sheet.lower() == spk_pdf.lower():
                         row_idx = r
                         break
-                # Prioritas 2: Jika SPK di sheet masih kosong/berbeda, ambil baris kandidat pertama yang belum terpakai
                 if row_idx is None:
                     row_idx = kandidat_baris[0]
 
@@ -375,13 +353,14 @@ def sync_to_google_sheet(df_edited, nama_tab_sheet, cabang_nama, is_icon=False):
                     "range": f"{let_tk}{row_idx}",
                     "values": [[safe_int(row["Jumlah Tenaga Kerja"])]]
                 })
+                # Kirim nilai float murni tanpa pembulatan agar rumus ROUND di Sheet yang menghitung
                 batch_data.append({
                     "range": f"{let_jkk}{row_idx}:{let_jpn}{row_idx}",
                     "values": [[
-                        custom_round(row["Total Iuran JKK"]),
-                        custom_round(row["Total Iuran JHT"]),
-                        custom_round(row["Total Iuran JKM"]),
-                        custom_round(row["Total Iuran JPN"])
+                        safe_float(row["Total Iuran JKK"]),
+                        safe_float(row["Total Iuran JHT"]),
+                        safe_float(row["Total Iuran JKM"]),
+                        safe_float(row["Total Iuran JPN"])
                     ]]
                 })
                 updated_count += 1
@@ -390,7 +369,7 @@ def sync_to_google_sheet(df_edited, nama_tab_sheet, cabang_nama, is_icon=False):
             worksheet.batch_update(batch_data, value_input_option="USER_ENTERED")
 
         # ======================================================================
-        # AUTO-LOGGING KE TAB "Rekap_Monitoring_TK"
+        # AUTO-LOGGING KE TAB "Rekap_Monitoring_TK" (NILAI ASLI TANPA ROUND)
         # ======================================================================
         if updated_count > 0:
             try:
@@ -401,7 +380,7 @@ def sync_to_google_sheet(df_edited, nama_tab_sheet, cabang_nama, is_icon=False):
                 
                 nama_cabang_log = "ICON" if is_icon else cabang_nama.upper()
                 total_tk_log = int(df_edited["Jumlah Tenaga Kerja"].sum())
-                total_tagihan_log = custom_round(df_edited["Total Pembayaran"].sum())
+                total_tagihan_log = safe_float(df_edited["Total Pembayaran"].sum())
                 
                 ws_mon.append_row([timestamp_str, nama_cabang_log, total_tk_log, total_tagihan_log], value_input_option="USER_ENTERED")
             except Exception as log_err:
@@ -456,7 +435,7 @@ nama_manager = st.sidebar.text_input("Nama Manager Cabang", value=default_manage
 # KONTEN UTAMA: BPJS KETENAGAKERJAAN
 # ==============================================================================
 st.title("🏢 Rekap PDF & Generator Surat BPJS Ketenagakerjaan")
-st.caption("Unggah PDF NPP/EPS/F2A Ketenagakerjaan, edit data SPK, buat dokumen Word/Excel, dan sync ke Google Sheet.")
+st.caption("Unggah PDF NPP/EPS/F2A Ketenagakerjaan, edit data SPK, buat dokumen Word/Excel, dan sync ke Google Sheet (Presisi Desimal Asli).")
 
 uploaded_files_tk = st.file_uploader(
     "Silahkan upload NPP/EPS/F2A (Bisa banyak & campur format sekaligus)", 
@@ -474,7 +453,6 @@ if uploaded_files_tk:
         try:
             with pdfplumber.open(file) as pdf:
                 first_text = (pdf.pages[0].extract_text() or "").lower()
-                # Deteksi otomatis apakah dokumen berjenis F2A (Rincian Tenaga Kerja) atau NPP/EPS
                 if "nomor referensi" in first_text or "iuran jht tk" in first_text or "jumlah seluruhnya" in first_text:
                     data_tk = parse_f2a_pdf(pdf, default_spk)
                 else:
@@ -516,7 +494,7 @@ if uploaded_files_tk:
             key=f"editor_combine_{selected_wilayah}_{len(uploaded_files_tk)}"
         )
 
-        gc.collect()  # Langsung bersihkan sisa memori file PDF dari RAM
+        gc.collect()
     
         edited_df.reset_index(drop=True, inplace=True)
         edited_df["NO"] = [idx + 1 for idx in range(len(edited_df))]
@@ -525,7 +503,7 @@ if uploaded_files_tk:
         total_tk_sum = int(edited_df["Jumlah Tenaga Kerja"].sum())
         terbilang_iuran = (terbilang(total_iuran_sum).strip() + " Rupiah") if total_iuran_sum > 0 else "-"
 
-        st.markdown(f"### **Total Anggaran Iuran:** Rp {total_iuran_sum:,.0f}".replace(",", "."))
+        st.markdown(f"### **Total Anggaran Iuran:** Rp {total_iuran_sum:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
         st.markdown(f"**Terbilang:** *{terbilang_iuran}*")
 
         st.subheader("📥 Unduh Hasil Dokumen")
@@ -570,7 +548,7 @@ if uploaded_files_tk:
                 ws.cell(row=r_idx, column=6, value=safe_int(row["Jumlah Tenaga Kerja"])).alignment = Alignment(horizontal="center")
                 
                 for c_off, col_name in enumerate(["Total Iuran JKK", "Total Iuran JHT", "Total Iuran JKM", "Total Iuran JPN", "Total Pembayaran"], start=7):
-                    c_cell = ws.cell(row=r_idx, column=c_off, value=float(row[col_name]))
+                    c_cell = ws.cell(row=r_idx, column=c_off, value=safe_float(row[col_name]))
                     c_cell.number_format = '"Rp "#,##0.00'
                     c_cell.alignment = Alignment(horizontal="right")
 
@@ -661,7 +639,7 @@ if uploaded_files_tk:
 
                 records = edited_df.to_dict(orient="records")
                 for row_data in records:
-                    val_iuran = float(row_data["Total Pembayaran"])
+                    val_iuran = safe_float(row_data["Total Pembayaran"])
                     formatted_iuran = f"Rp\t{val_iuran:,.0f}".replace(",", ".")
 
                     row_cells = new_table.add_row().cells
@@ -756,10 +734,10 @@ if uploaded_files_tk:
             tab_sheet_target_tk = st.text_input("Nama Tab Google Sheet Target (Manual)", "01. REKAP 11.26", key="target_sheet_tk")
 
         if st.button("⚡ Sync Data PDF ke Google Sheet Sekarang", type="primary", key="btn_sync_tk"):
-            with st.spinner("Sedang mencocokkan NPP dan mengirim data ke Google Sheet"):
+            with st.spinner("Sedang mencocokkan NPP dan mengirim data presisi desimal ke Google Sheet..."):
                 is_icon_selected = (target_sheet_choice == "Sheet Rekap Cabang ICON")
                 success, res = sync_to_google_sheet(edited_df, tab_sheet_target_tk, wilayah_display, is_icon=is_icon_selected)
                 if success:
-                    st.success(f"BERHASIL! {res} data baris NPP berhasil di-Update & dicatat ke Rekap_Monitoring_TK!")
+                    st.success(f"BERHASIL! {res} data baris NPP berhasil di-Update dengan nilai desimal asli ke Google Sheet!")
                 else:
                     st.error(f"Gagal melakukan sync: {res}")
