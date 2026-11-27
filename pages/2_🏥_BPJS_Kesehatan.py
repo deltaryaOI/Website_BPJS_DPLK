@@ -481,11 +481,21 @@ if uploaded_files_kes:
 
             df_display_billing = df_kes_raw[["Nama Perusahaan", "Nomor VA", "Status VA", "Nomor Kontrak", "Jumlah Tenaga Kerja", "Total Iuran"]].copy()
 
+            # Gabungkan daftar SPK cabang + SPK terdeteksi dari DB VA agar dropdown selalu lengkap
+            detected_spks_t1 = [str(s).strip() for s in df_display_billing["Nomor Kontrak"].tolist() if str(s).strip() and str(s).strip() != "-"]
+            base_spks_cabang = [str(s).strip() for s in kontrak_options if str(s).strip() and str(s).strip() != "-"]
+            dropdown_spk_options_t1 = list(dict.fromkeys(detected_spks_t1 + base_spks_cabang)) or ["-"]
+
             column_config_kes = {
                 "Nama Perusahaan": st.column_config.TextColumn("Nama Perusahaan / BU"),
                 "Nomor VA": st.column_config.TextColumn("Nomor VA Mandiri"),
                 "Status VA": st.column_config.TextColumn("Deteksi VA", disabled=True),
-                "Nomor Kontrak": st.column_config.TextColumn("Nomor Kontrak (SPK)", width="large"),
+                "Nomor Kontrak": st.column_config.SelectboxColumn(
+                    "Nomor Kontrak (SPK)",
+                    options=dropdown_spk_options_t1,
+                    width="large",
+                    required=False
+                ),
                 "Jumlah Tenaga Kerja": st.column_config.NumberColumn("Jml TK", format="%d"),
                 "Total Iuran": st.column_config.NumberColumn("Total Tagihan (Rp)", format="Rp %d")
             }
@@ -497,6 +507,7 @@ if uploaded_files_kes:
                 use_container_width=True,
                 key=f"editor_combine_kes_{selected_wilayah}_{len(uploaded_files_kes)}"
             )
+            edited_df_kes["Nomor Kontrak"] = edited_df_kes["Nomor Kontrak"].fillna("-").apply(lambda x: str(x).strip() if str(x).strip() else "-")
 
             edited_df_kes.reset_index(drop=True, inplace=True)
             edited_df_kes["NO"] = [idx + 1 for idx in range(len(edited_df_kes))]
@@ -822,19 +833,34 @@ if uploaded_files_kes:
 
             df_kk_init = pd.DataFrame(kertas_kerja_rows)
 
+            with st.expander("📌 Lihat Referensi Daftar Nomor Kontrak (SPK) & No IO Cabang Ini"):
+                for opt in kontrak_options:
+                    io_tag = f" [IO: {spk_io_map_cabang[opt]}]" if opt in spk_io_map_cabang else ""
+                    st.code(f"{opt}{io_tag}", language="text")
+
+            # Filter dropdown hanya berdasarkan cabang/kota yang dipilih + SPK yang terdeteksi dari VA billing yang diupload
+            detected_spks_t2 = [str(s).strip() for s in df_kk_init["Nomor Kontrak"].tolist() if str(s).strip() and str(s).strip() != "-"]
+            base_spks_t2 = [str(s).strip() for s in kontrak_options if str(s).strip() and str(s).strip() != "-"]
+            dropdown_spk_options_t2 = list(dict.fromkeys(detected_spks_t2 + base_spks_t2)) or ["-"]
+
             col_kk_config = {
-                "ID Billing": st.column_config.TextColumn("ID", disabled=True, width="small"),
-                "Nama Perusahaan": st.column_config.TextColumn("Badan Usaha", disabled=True),
-                "Nomor VA": st.column_config.TextColumn("Nomor VA Mandiri", disabled=True),
+                "ID Billing": st.column_config.TextColumn("ID", width="small"),
+                "Nama Perusahaan": st.column_config.TextColumn("Badan Usaha"),
+                "Nomor VA": st.column_config.TextColumn("Nomor VA Mandiri"),
                 "Tipe VA": st.column_config.TextColumn("Status VA", disabled=True),
-                "Total TK Billing": st.column_config.NumberColumn("TK Billing", format="%d", disabled=True),
-                "Total Rp Billing": st.column_config.NumberColumn("Tagihan Billing (Rp)", format="Rp %d", disabled=True),
-                "Nomor Kontrak": st.column_config.TextColumn("Nomor Kontrak (SPK)", width="large"),
+                "Total TK Billing": st.column_config.NumberColumn("TK Billing", format="%d"),
+                "Total Rp Billing": st.column_config.NumberColumn("Tagihan Billing (Rp)", format="Rp %d"),
+                "Nomor Kontrak": st.column_config.SelectboxColumn(
+                    "Nomor Kontrak (SPK)",
+                    options=dropdown_spk_options_t2,
+                    width="large",
+                    required=False
+                ),
                 "No IO": st.column_config.TextColumn("No IO", disabled=True, width="small"),
                 "Jml TK SPK": st.column_config.NumberColumn("✏️ Isi Jml TK SPK", format="%d", min_value=0, step=1)
             }
 
-            st.caption("✏️ **Silakan isi kolom `✏️ Isi Jml TK SPK` untuk baris berstatus `VA Gabung` (Anda juga bisa tambah/hapus baris SPK jika perlu):**")
+            st.caption("✏️ **Silakan isi kolom `✏️ Isi Jml TK SPK` atau pilih dropdown `Nomor Kontrak (SPK)` (Anda juga bisa tambah/hapus baris SPK jika perlu):**")
             df_kk_edited = st.data_editor(
                 df_kk_init,
                 column_config=col_kk_config,
@@ -842,6 +868,7 @@ if uploaded_files_kes:
                 use_container_width=True,
                 key=f"editor_kertas_kerja_spk_{selected_wilayah}_{len(uploaded_files_kes)}"
             )
+            df_kk_edited["Nomor Kontrak"] = df_kk_edited["Nomor Kontrak"].fillna("-").apply(lambda x: str(x).strip() if str(x).strip() else "-")
 
             # Hitung alokasi prorata bulat per kelompok ID Billing / Nomor VA
             df_kk_calc = df_kk_edited.copy()
