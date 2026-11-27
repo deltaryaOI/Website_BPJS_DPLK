@@ -244,7 +244,7 @@ tab_kontrak, tab_va_npp = st.tabs([
 with tab_kontrak:
     st.subheader("📤 Ekstraksi Master Kontrak Kantor")
     st.info(
-        "💡 **Update SPK dan IO dari Monitoring Kontrak**
+        "💡 **Update SPK dan IO dari Monitoring Kontrak**"
     )
 
     col_opt1, col_opt2 = st.columns(2)
