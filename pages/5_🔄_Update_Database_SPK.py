@@ -235,7 +235,7 @@ st.caption(
 
 tab_kontrak, tab_va_npp = st.tabs([
     "1️⃣ Master Kontrak (SPK & IO)",
-    "2️⃣ Mapping VA Mandiri & NPP -> SPK"
+    "2️⃣ Mapping VA & NPP -> SPK"
 ])
 
 # ==============================================================================
@@ -260,8 +260,8 @@ with tab_kontrak:
         )
 
     uploaded_spk_excel = st.file_uploader(
-        "Unggah File Master Kontrak Kantor (.xlsx)",
-        type=["xlsx"],
+        "Unggah File Master Kontrak Kantor (.xlsx / .xls)",
+        type=["xlsx", "xls"],
         key="uploader_spk_page"
     )
 
@@ -466,7 +466,7 @@ with tab_kontrak:
 # TAB 2: UPLOAD & EKSTRAKSI MAPPING VA MANDIRI & NPP -> database_va_npp.json
 # ==============================================================================
 with tab_va_npp:
-    st.subheader("🔗 Konversi Master Mapping VA Mandiri & NPP (.xlsx) -> JSON Ringan")
+    st.subheader("🔗 Database Mapping VA & NPP")
     st.info(
         "💡 **Fitur Otomatisasi SPK dari PDF Billing / NPP:** Unggah file `Mapping NPP dan VA ALL.xlsx` di sini. "
         "Sistem akan mengonversinya menjadi `database_va_npp.json` yang sangat ringan dibaca saat upload PDF "
@@ -474,8 +474,8 @@ with tab_va_npp:
     )
 
     uploaded_va_excel = st.file_uploader(
-        "Unggah File Mapping NPP & VA (.xlsx)",
-        type=["xlsx"],
+        "Unggah File Mapping NPP & VA (.xlsx / .xls)",
+        type=["xlsx", "xls"],
         key="uploader_va_npp_page"
     )
 
