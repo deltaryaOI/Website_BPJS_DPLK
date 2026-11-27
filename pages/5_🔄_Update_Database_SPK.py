@@ -468,9 +468,7 @@ with tab_kontrak:
 with tab_va_npp:
     st.subheader("🔗 Database Mapping VA & NPP")
     st.info(
-        "💡 **Fitur Otomatisasi SPK dari PDF Billing / NPP:** Unggah file `Mapping NPP dan VA ALL.xlsx` di sini. "
-        "Sistem akan mengonversinya menjadi `database_va_npp.json` yang sangat ringan dibaca saat upload PDF "
-        "BPJS Kesehatan (via VA Mandiri) maupun BPJS Ketenagakerjaan (via NPP), tanpa harus membaca Google Sheets berulang kali."
+        "💡 **Fitur Otomatisasi SPK dari PDF Billing / NPP**"
     )
 
     uploaded_va_excel = st.file_uploader(
