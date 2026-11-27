@@ -329,9 +329,6 @@ nomor_surat = st.sidebar.text_input("Nomor Surat", "001/SP/HPI/X/2026")
 tanggal_surat = st.sidebar.text_input("Tanggal Surat", value=tanggal_hari_ini)
 nama_manager = st.sidebar.text_input("Nama Manager Cabang", value=default_manager)
 
-st.sidebar.markdown("---")
-st.sidebar.caption(f"🗄️ **Database VA Mandiri:** `{len(db_va_kes)}` VA aktif terhubung")
-
 # ==============================================================================
 # KONTEN UTAMA: BPJS KESEHATAN
 # ==============================================================================
