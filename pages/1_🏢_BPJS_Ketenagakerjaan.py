@@ -13,6 +13,7 @@ import docx
 import datetime
 import openpyxl
 import gspread
+from decimal import Decimal, ROUND_HALF_UP
 from google.oauth2.service_account import Credentials
 from docx.shared import Inches, Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -46,11 +47,25 @@ tanggal_hari_ini = f"{now.day} {NAMA_BULAN[now.month]} {now.year}"
 # ==============================================================================
 # FUNGSI HELPER & KEAMANAN
 # ==============================================================================
+def round_half_up_int(val):
+    """Pembulatan komersial standar (0.50 ke atas) agar bebas float error"""
+    try:
+        return int(Decimal(str(val)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+    except Exception:
+        return int(round(float(val or 0)))
+
+def round_half_up_2dec(val):
+    """Pembulatan 2 desimal presisi untuk komponen iuran"""
+    try:
+        return float(Decimal(str(val)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+    except Exception:
+        return round(float(val or 0.0), 2)
+
 def safe_int(val):
     try:
         if pd.isna(val) or val is None or str(val).strip() == "" or str(val).strip().lower() == "none":
             return 0
-        return int(float(val))
+        return round_half_up_int(val)
     except (ValueError, TypeError):
         return 0
 
@@ -74,7 +89,7 @@ def extract_periode(tanggal_str):
 
 def terbilang(n):
     satuan = ["", "Satu", "Dua", "Tiga", "Empat", "Lima", "Enam", "Tujuh", "Delapan", "Sembilan", "Sepuluh", "Sebelas"]
-    n = int(abs(n))
+    n = round_half_up_int(abs(n))
     if n < 12:
         return satuan[n]
     elif n < 20:
@@ -141,7 +156,7 @@ def lengkapi_npp_dan_kode_iuran(data_tk):
     return data_tk
 
 def parse_f2a_pdf(pdf, default_spk):
-    """Membaca PDF Rincian Tenaga Kerja / Form F2A multi-halaman (Nilai Desimal Asli)"""
+    """Membaca PDF Rincian Tenaga Kerja / Form F2A multi-halaman (Total dihitung & di-round dari JKK+JHT+JKM+JPN)"""
     data_tk = {
         "Nama Perusahaan": "-",
         "NPP": "-",
@@ -198,11 +213,17 @@ def parse_f2a_pdf(pdf, default_spk):
                             numeric_cells.append(parse_amount(c))
 
                     if len(numeric_cells) >= 8:
-                        jkk = numeric_cells[2]
-                        jkm = numeric_cells[3]
-                        jht = round(numeric_cells[4] + numeric_cells[5], 2)
-                        jpn = round(numeric_cells[6] + numeric_cells[7], 2)
-                        total = numeric_cells[-1] if len(numeric_cells) >= 11 else round(jkk + jkm + jht + jpn, 2)
+                        jkk = round_half_up_2dec(numeric_cells[2])
+                        jkm = round_half_up_2dec(numeric_cells[3])
+                        jht = round_half_up_2dec(numeric_cells[4] + numeric_cells[5])
+                        jpn = round_half_up_2dec(numeric_cells[6] + numeric_cells[7])
+                        
+                        # Selalu hitung dari penjumlahan 4 komponen lalu round ke rupiah penuh (bukan angka terpotong PDF)
+                        total_komponen = jkk + jht + jkm + jpn
+                        if total_komponen > 0:
+                            total = float(round_half_up_int(total_komponen))
+                        else:
+                            total = float(round_half_up_int(numeric_cells[-1]))
 
                         data_tk["Total Iuran JKK"] = jkk
                         data_tk["Total Iuran JKM"] = jkm
@@ -214,7 +235,7 @@ def parse_f2a_pdf(pdf, default_spk):
     return lengkapi_npp_dan_kode_iuran(data_tk)
 
 def parse_npp_eps_pdf(pdf, default_spk):
-    """Membaca PDF Billing NPP / EPS (Nilai Desimal Asli)"""
+    """Membaca PDF Billing NPP / EPS (Total dihitung & di-round dari JKK+JHT+JKM+JPN)"""
     raw_text = ""
     for page in pdf.pages:
         text = page.extract_text()
@@ -262,28 +283,38 @@ def parse_npp_eps_pdf(pdf, default_spk):
 
     match_jkk = re.search(r'JKK.*?(?:Rp\.?|Rp)?\s*([\d,.]+)', clean_text, re.IGNORECASE)
     if match_jkk:
-        data_tk["Total Iuran JKK"] = parse_amount(match_jkk.group(1))
+        data_tk["Total Iuran JKK"] = round_half_up_2dec(parse_amount(match_jkk.group(1)))
 
     match_jht = re.search(r'JHT.*?(?:Rp\.?|Rp)?\s*([\d,.]+)', clean_text, re.IGNORECASE)
     if match_jht:
-        data_tk["Total Iuran JHT"] = parse_amount(match_jht.group(1))
+        data_tk["Total Iuran JHT"] = round_half_up_2dec(parse_amount(match_jht.group(1)))
 
     match_jkm = re.search(r'JKM.*?(?:Rp\.?|Rp)?\s*([\d,.]+)', clean_text, re.IGNORECASE)
     if match_jkm:
-        data_tk["Total Iuran JKM"] = parse_amount(match_jkm.group(1))
+        data_tk["Total Iuran JKM"] = round_half_up_2dec(parse_amount(match_jkm.group(1)))
 
     match_jpn = re.search(r'(?:JPN|JP)\s.*?(?:Rp\.?|Rp)?\s*([\d,.]+)', clean_text, re.IGNORECASE)
     if match_jpn:
-        data_tk["Total Iuran JPN"] = parse_amount(match_jpn.group(1))
+        data_tk["Total Iuran JPN"] = round_half_up_2dec(parse_amount(match_jpn.group(1)))
 
-    match_total = re.search(r'(?:TOTAL\s*YANG\s*DIBAYARKAN|TOTAL\s*IURAN)\s*(?:\(\s*PEMBULATAN\s*\))?\s*:?\s*(?:Rp\.?|Rp)?\s*([\d,.]+)', clean_text, re.IGNORECASE)
-    if match_total:
-        data_tk["Total Pembayaran"] = parse_amount(match_total.group(1))
+    # Hitung ulang total dari 4 komponen lalu round ke rupiah penuh
+    total_komponen = (
+        data_tk["Total Iuran JKK"]
+        + data_tk["Total Iuran JHT"]
+        + data_tk["Total Iuran JKM"]
+        + data_tk["Total Iuran JPN"]
+    )
+    if total_komponen > 0:
+        data_tk["Total Pembayaran"] = float(round_half_up_int(total_komponen))
+    else:
+        match_total = re.search(r'(?:TOTAL\s*YANG\s*DIBAYARKAN|TOTAL\s*IURAN)\s*(?:\(\s*PEMBULATAN\s*\))?\s*:?\s*(?:Rp\.?|Rp)?\s*([\d,.]+)', clean_text, re.IGNORECASE)
+        if match_total:
+            data_tk["Total Pembayaran"] = float(round_half_up_int(parse_amount(match_total.group(1))))
 
     return lengkapi_npp_dan_kode_iuran(data_tk)
 
 def sync_to_google_sheet(df_edited, nama_tab_sheet, cabang_nama, is_icon=False):
-    """Mengirim nilai desimal asli (tanpa pembulatan Python) agar rumus ROUND di Sheet yang bekerja"""
+    """Mengirim nilai desimal asli ke sheet cabang (agar rumus ROUND di Sheet bekerja) & total bulat ke log monitoring"""
     try:
         scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
         creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
@@ -345,10 +376,11 @@ def sync_to_google_sheet(df_edited, nama_tab_sheet, cabang_nama, is_icon=False):
 
             if row_idx is not None:
                 baris_terpakai.add(row_idx)
-                batch_data.append({
-                    "range": f"{let_spk}{row_idx}",
-                    "values": [[spk_pdf]]
-                })
+                if spk_pdf and spk_pdf != "-":
+                    batch_data.append({
+                        "range": f"{let_spk}{row_idx}",
+                        "values": [[spk_pdf]]
+                    })
                 batch_data.append({
                     "range": f"{let_tk}{row_idx}",
                     "values": [[safe_int(row["Jumlah Tenaga Kerja"])]]
@@ -369,7 +401,7 @@ def sync_to_google_sheet(df_edited, nama_tab_sheet, cabang_nama, is_icon=False):
             worksheet.batch_update(batch_data, value_input_option="USER_ENTERED")
 
         # ======================================================================
-        # AUTO-LOGGING KE TAB "Rekap_Monitoring_TK" (NILAI ASLI TANPA ROUND)
+        # AUTO-LOGGING KE TAB "Rekap_Monitoring_TK" (TOTAL BULAT ROUND_HALF_UP)
         # ======================================================================
         if updated_count > 0:
             try:
@@ -380,7 +412,7 @@ def sync_to_google_sheet(df_edited, nama_tab_sheet, cabang_nama, is_icon=False):
                 
                 nama_cabang_log = "ICON" if is_icon else cabang_nama.upper()
                 total_tk_log = int(df_edited["Jumlah Tenaga Kerja"].sum())
-                total_tagihan_log = safe_float(df_edited["Total Pembayaran"].sum())
+                total_tagihan_log = round_half_up_int(df_edited["Total Pembayaran"].sum())
                 
                 ws_mon.append_row([timestamp_str, nama_cabang_log, total_tk_log, total_tagihan_log], value_input_option="USER_ENTERED")
             except Exception as log_err:
@@ -409,7 +441,24 @@ def load_database():
                 pass
     return {}
 
+@st.cache_data(ttl=300, max_entries=3)
+def load_va_npp_database():
+    possible_paths = [
+        "database_va_npp.json",
+        os.path.join("..", "database_va_npp.json")
+    ]
+    for path in possible_paths:
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                pass
+    return {"kesehatan": {}, "ketenagakerjaan": {}}
+
 db_kontrak = load_database()
+db_va_npp = load_va_npp_database()
+db_npp_tk = db_va_npp.get("ketenagakerjaan", {})
 
 st.sidebar.header("📌 Pengaturan Dokumen Word")
 wilayah_list = list(db_kontrak.keys()) if db_kontrak else ["Cab. Palembang", "Cab. Medan", "Cab. Sibolga Nias", "Cab. Bangka Belitung"]
@@ -431,11 +480,14 @@ nomor_surat = st.sidebar.text_input("Nomor Surat", "001/SP/HPI/X/2026")
 tanggal_surat = st.sidebar.text_input("Tanggal Surat", value=tanggal_hari_ini) 
 nama_manager = st.sidebar.text_input("Nama Manager Cabang", value=default_manager)
 
+st.sidebar.markdown("---")
+st.sidebar.caption(f"🗄️ **Database NPP:** `{len(db_npp_tk)}` NPP aktif terhubung")
+
 # ==============================================================================
 # KONTEN UTAMA: BPJS KETENAGAKERJAAN
 # ==============================================================================
 st.title("🏢 Rekap PDF & Generator Surat BPJS Ketenagakerjaan")
-st.caption("Unggah PDF NPP/EPS/F2A Ketenagakerjaan, edit data SPK, buat dokumen Word/Excel, dan sync ke Google Sheet (Presisi Desimal Asli).")
+st.caption("Unggah PDF NPP/EPS/F2A Ketenagakerjaan, edit data SPK, buat dokumen Word/Excel, dan sync ke Google Sheet.")
 
 uploaded_files_tk = st.file_uploader(
     "Silahkan upload NPP/EPS/F2A (Bisa banyak & campur format sekaligus)", 
@@ -447,16 +499,29 @@ uploaded_files_tk = st.file_uploader(
 if uploaded_files_tk:
     st.info(f"Memproses {len(uploaded_files_tk)} file BPJS Ketenagakerjaan...")
     all_data_tk = []
-    default_spk = kontrak_options[0] if (kontrak_options and len(kontrak_options) > 0) else "-"
 
     for file in uploaded_files_tk:
         try:
             with pdfplumber.open(file) as pdf:
                 first_text = (pdf.pages[0].extract_text() or "").lower()
                 if "nomor referensi" in first_text or "iuran jht tk" in first_text or "jumlah seluruhnya" in first_text:
-                    data_tk = parse_f2a_pdf(pdf, default_spk)
+                    data_tk = parse_f2a_pdf(pdf, "")
                 else:
-                    data_tk = parse_npp_eps_pdf(pdf, default_spk)
+                    data_tk = parse_npp_eps_pdf(pdf, "")
+
+                # Pencocokan otomatis NPP -> SPK dari database_va_npp.json (tanpa pecah SPK, ambil default SPK terdaftar)
+                npp_clean = re.sub(r'\D', '', str(data_tk.get("NPP", "")))
+                if npp_clean and npp_clean in db_npp_tk:
+                    spk_candidates = db_npp_tk[npp_clean].get("spk_list", [])
+                    if spk_candidates:
+                        data_tk["Nomor Kontrak"] = str(spk_candidates[0]).strip()
+                        data_tk["Status NPP"] = "✅ Auto DB"
+                    else:
+                        data_tk["Nomor Kontrak"] = ""
+                        data_tk["Status NPP"] = "⚠️ Pilih Dropdown"
+                else:
+                    data_tk["Nomor Kontrak"] = ""
+                    data_tk["Status NPP"] = "❓ Pilih Dropdown"
 
                 all_data_tk.append(data_tk)
             
@@ -467,23 +532,43 @@ if uploaded_files_tk:
         df_raw = pd.DataFrame(all_data_tk)
         
         st.subheader("✏️ Edit Data & Nomor Kontrak (SPK)")
-        st.caption("💡 Klik 2x sel di bawah ini untuk mengedit data secara langsung.")
+        st.caption("💡 Klik 2x sel di bawah ini untuk mengedit data secara langsung (Total Pembayaran otomatis menghitung pembulatan dari JKK + JHT + JKM + JPN).")
 
         with st.expander("📌 Lihat Daftar Nomor Kontrak (SPK) Cabang Ini"):
             for opt in kontrak_options:
                 st.code(opt, language="text")
 
+        # Gabungkan opsi SPK dari database cabang + seluruh SPK yang terdeteksi dari DB NPP agar dropdown tidak pernah kehilangan nilai
+        detected_spks = [str(s).strip() for s in df_raw["Nomor Kontrak"].tolist() if str(s).strip() and str(s).strip() != "-"]
+        base_spks = [str(s).strip() for s in kontrak_options if str(s).strip() and str(s).strip() != "-"]
+        dropdown_spk_options = list(dict.fromkeys(detected_spks + base_spks))
+        if not dropdown_spk_options:
+            dropdown_spk_options = ["-"]
+
+        cols_order = [
+            "Nama Perusahaan", "NPP", "Status NPP", "Nomor Kontrak", "Kode Iuran",
+            "Jumlah Tenaga Kerja", "Total Iuran JKK", "Total Iuran JHT",
+            "Total Iuran JKM", "Total Iuran JPN", "Total Pembayaran"
+        ]
+        df_raw = df_raw[cols_order]
+
         column_config = {
             "Nama Perusahaan": st.column_config.TextColumn("Nama Perusahaan / Unit"),
             "NPP": st.column_config.TextColumn("NPP"),
-            "Nomor Kontrak": st.column_config.TextColumn("Nomor Kontrak (SPK)", width="large"),
+            "Status NPP": st.column_config.TextColumn("Deteksi NPP", disabled=True),
+            "Nomor Kontrak": st.column_config.SelectboxColumn(
+                "Nomor Kontrak (SPK)",
+                options=dropdown_spk_options,
+                width="large",
+                required=False
+            ),
             "Kode Iuran": st.column_config.TextColumn("Kode Iuran"),
             "Jumlah Tenaga Kerja": st.column_config.NumberColumn("Jml TK", format="%d"),
             "Total Iuran JKK": st.column_config.NumberColumn("Total JKK", format="Rp %.2f"),
             "Total Iuran JHT": st.column_config.NumberColumn("Total JHT", format="Rp %.2f"),
             "Total Iuran JKM": st.column_config.NumberColumn("Total JKM", format="Rp %.2f"),
             "Total Iuran JPN": st.column_config.NumberColumn("Total JPN", format="Rp %.2f"),
-            "Total Pembayaran": st.column_config.NumberColumn("Total Pembayaran (Rp)", format="Rp %.2f")
+            "Total Pembayaran": st.column_config.NumberColumn("Total Pembayaran (Rp)", format="Rp %.0f", disabled=True)
         }
 
         edited_df = st.data_editor(
@@ -494,16 +579,32 @@ if uploaded_files_tk:
             key=f"editor_combine_{selected_wilayah}_{len(uploaded_files_tk)}"
         )
 
+        # Pastikan nilai None/kosong di kolom Nomor Kontrak dinormalisasi menjadi "-" agar rapi saat export & sync
+        edited_df["Nomor Kontrak"] = edited_df["Nomor Kontrak"].fillna("-").apply(lambda x: str(x).strip() if str(x).strip() else "-")
+
         gc.collect()
     
         edited_df.reset_index(drop=True, inplace=True)
         edited_df["NO"] = [idx + 1 for idx in range(len(edited_df))]
 
-        total_iuran_sum = float(edited_df["Total Pembayaran"].sum())
+        # Hitung ulang Total Pembayaran setiap baris = round(JKK + JHT + JKM + JPN)
+        for idx, row in edited_df.iterrows():
+            komp_sum = (
+                safe_float(row["Total Iuran JKK"])
+                + safe_float(row["Total Iuran JHT"])
+                + safe_float(row["Total Iuran JKM"])
+                + safe_float(row["Total Iuran JPN"])
+            )
+            if komp_sum > 0:
+                edited_df.at[idx, "Total Pembayaran"] = float(round_half_up_int(komp_sum))
+            else:
+                edited_df.at[idx, "Total Pembayaran"] = float(round_half_up_int(safe_float(row["Total Pembayaran"])))
+
+        total_iuran_sum = round_half_up_int(edited_df["Total Pembayaran"].sum())
         total_tk_sum = int(edited_df["Jumlah Tenaga Kerja"].sum())
         terbilang_iuran = (terbilang(total_iuran_sum).strip() + " Rupiah") if total_iuran_sum > 0 else "-"
 
-        st.markdown(f"### **Total Anggaran Iuran:** Rp {total_iuran_sum:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+        st.markdown(f"### **Total Anggaran Iuran:** Rp {total_iuran_sum:,.0f}".replace(",", "."))
         st.markdown(f"**Terbilang:** *{terbilang_iuran}*")
 
         st.subheader("📥 Unduh Hasil Dokumen")
@@ -547,10 +648,14 @@ if uploaded_files_tk:
                 ws.cell(row=r_idx, column=5, value=str(row["Kode Iuran"])).alignment = Alignment(horizontal="center")
                 ws.cell(row=r_idx, column=6, value=safe_int(row["Jumlah Tenaga Kerja"])).alignment = Alignment(horizontal="center")
                 
-                for c_off, col_name in enumerate(["Total Iuran JKK", "Total Iuran JHT", "Total Iuran JKM", "Total Iuran JPN", "Total Pembayaran"], start=7):
+                for c_off, col_name in enumerate(["Total Iuran JKK", "Total Iuran JHT", "Total Iuran JKM", "Total Iuran JPN"], start=7):
                     c_cell = ws.cell(row=r_idx, column=c_off, value=safe_float(row[col_name]))
                     c_cell.number_format = '"Rp "#,##0.00'
                     c_cell.alignment = Alignment(horizontal="right")
+
+                c_tot = ws.cell(row=r_idx, column=11, value=round_half_up_int(row["Total Pembayaran"]))
+                c_tot.number_format = '"Rp "#,##0'
+                c_tot.alignment = Alignment(horizontal="right")
 
                 for c_idx in range(1, 12):
                     c = ws.cell(row=r_idx, column=c_idx)
@@ -639,7 +744,7 @@ if uploaded_files_tk:
 
                 records = edited_df.to_dict(orient="records")
                 for row_data in records:
-                    val_iuran = safe_float(row_data["Total Pembayaran"])
+                    val_iuran = round_half_up_int(row_data["Total Pembayaran"])
                     formatted_iuran = f"Rp\t{val_iuran:,.0f}".replace(",", ".")
 
                     row_cells = new_table.add_row().cells
