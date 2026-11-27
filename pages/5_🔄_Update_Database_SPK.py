@@ -242,11 +242,9 @@ tab_kontrak, tab_va_npp = st.tabs([
 # TAB 1: UPLOAD & EKSTRAKSI MASTER KONTRAK KANTOR -> JSON + AUTO-PUSH GITHUB
 # ==============================================================================
 with tab_kontrak:
-    st.subheader("📤 Ekstraksi Master Kontrak Kantor (.xlsx)")
+    st.subheader("📤 Ekstraksi Master Kontrak Kantor")
     st.info(
-        "💡 **Mode Langsung dari File Kantor:** Unggah langsung file asli kantor (`Kontrak Update ...xlsx`), "
-        "sistem otomatis memfilter status **AKTIF**, mengelompokkan per **Unit Kerja PT HPI**, dan memasangkan "
-        "setiap **Nomor SPK** dengan **INT_ORDER (IO)**."
+        "💡 **Update SPK dan IO dari Monitoring Kontrak**
     )
 
     col_opt1, col_opt2 = st.columns(2)
@@ -472,7 +470,7 @@ with tab_va_npp:
     )
 
     uploaded_va_excel = st.file_uploader(
-        "Unggah File Mapping NPP & VA (.xlsx / .xls)",
+        "Unggah File Mapping NPP & VA",
         type=["xlsx", "xls"],
         key="uploader_va_npp_page"
     )
