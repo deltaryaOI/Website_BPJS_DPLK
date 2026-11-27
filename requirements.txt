@@ -1,10 +1,15 @@
 streamlit
 pandas
+numpy
 openpyxl
+xlrd
+pyxlsb
 pdfplumber
+pypdf
 requests
 gspread
 google-auth
 python-docx
 docxtpl
 plotly
+pillow
